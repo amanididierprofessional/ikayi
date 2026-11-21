@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { isLoggedIn } from "@/lib/auth";
 import { enterAppMode, isAppMode } from "@/lib/app-mode";
 import { AuthCard } from "./AuthCard";
+import { useConnectivity } from "@/hooks/use-connectivity";
 import logo from "@/assets/ikayi-logo.png";
 
 /**
@@ -15,7 +16,7 @@ import logo from "@/assets/ikayi-logo.png";
 export function Shell({ children }: { children: ReactNode }) {
   const { lang, setLang, t } = useI18n();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const [online, setOnline] = useState(true);
+  const online = useConnectivity();
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
   const isLanding =
@@ -26,17 +27,6 @@ export function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isAppMode()) enterAppMode();
-  }, []);
-
-  useEffect(() => {
-    setOnline(navigator.onLine);
-    const update = () => setOnline(navigator.onLine);
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
   }, []);
 
   useEffect(() => {
