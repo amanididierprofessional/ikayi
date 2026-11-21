@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { isLoggedIn, signOutLocal } from "@/lib/auth";
 import { fullSync } from "@/lib/sync";
 import { supabaseConfigured } from "@/lib/supabase";
+import { useConnectivity } from "@/hooks/use-connectivity";
 
 const LAST_SYNC_KEY = "ikayi-last-sync-at";
 const AUTO_SYNC_KEY = "ikayi-sync-mode";
@@ -42,24 +43,13 @@ function writeLastSync(ts: number) {
 export function SettingsPage() {
   const { t, lang } = useI18n();
   const rw = lang === "rw";
-  const [online, setOnline] = useState(true);
+  const online = useConnectivity();
   const [authed, setAuthed] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [reset, setReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [autoSync, setAutoSync] = useState(readAutoSync);
-
-  useEffect(() => {
-    setOnline(navigator.onLine);
-    const u = () => setOnline(navigator.onLine);
-    window.addEventListener("online", u);
-    window.addEventListener("offline", u);
-    return () => {
-      window.removeEventListener("online", u);
-      window.removeEventListener("offline", u);
-    };
-  }, []);
 
   useEffect(() => {
     void isLoggedIn().then(setAuthed);
