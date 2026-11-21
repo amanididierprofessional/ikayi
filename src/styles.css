@@ -250,7 +250,7 @@
   background: var(--primary);
 }
 .ikayi-startup-track span.is-loading {
-  animation: ikayi-progress 1.2s ease-in-out infinite;
+  animation: ikayi-progress 1.15s linear infinite;
 }
 .ikayi-startup-track span.is-ready {
   width: 100%;
@@ -269,10 +269,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ikayi-startup-logo {
-    animation: none;
-  }
   .ikayi-startup-track span.is-loading {
-    animation-duration: 3s;
+    animation: none;
+    transform: translateX(75%);
   }
 }
