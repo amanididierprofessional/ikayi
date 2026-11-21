@@ -1,7 +1,14 @@
 /**
  * Phone account recovery: verify profiles.full_name + profiles.phone, then set new password.
- * Deploy: supabase functions deploy phone-recover
- * Secrets: SUPABASE_SERVICE_ROLE_KEY (Dashboard → Edge Functions → Secrets)
+ *
+ * Edge Function secrets (Dashboard → Edge Functions → Secrets):
+ *   Name:  SERVICE_ROLE_KEY   (do NOT prefix with SUPABASE_ — reserved)
+ *   Value: Project Settings → API Keys → Secret key (sb_secret_…) OR legacy service_role (eyJ…)
+ *
+ * Auto-provided by Supabase (no need to add):
+ *   SUPABASE_URL
+ *
+ * Deploy: supabase functions deploy phone-recover --project-ref tngyfjxkpwayctrprftq
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
@@ -15,6 +22,16 @@ function normName(s: string) {
 }
 function normPhone(s: string) {
   return s.replace(/\D/g, "").replace(/^0/, "250");
+}
+
+/** Prefer custom secret name; fall back to platform / legacy names. */
+function serviceRoleKey(): string {
+  return (
+    Deno.env.get("SERVICE_ROLE_KEY") ||
+    Deno.env.get("SUPABASE_SECRET_KEY") ||
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+    ""
+  );
 }
 
 Deno.serve(async (req) => {
@@ -44,19 +61,25 @@ Deno.serve(async (req) => {
     }
 
     const url = Deno.env.get("SUPABASE_URL") ?? "";
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const serviceKey = serviceRoleKey();
     if (!url || !serviceKey) {
-      return new Response(JSON.stringify({ ok: false, error: "server_misconfigured" }), {
-        status: 500,
-        headers: { ...cors, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "server_misconfigured",
+          hint: "Add secret SERVICE_ROLE_KEY = your project Secret / service_role key",
+        }),
+        {
+          status: 500,
+          headers: { ...cors, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const admin = createClient(url, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Match profile: phone stored as digits (with or without 250) and name lowercase
     const { data: profiles, error: qErr } = await admin
       .from("profiles")
       .select("id, full_name, phone")
