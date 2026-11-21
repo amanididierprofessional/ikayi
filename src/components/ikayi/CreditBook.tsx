@@ -27,13 +27,12 @@ import {
   addPerson,
   addDebt,
   pay,
-  deletePerson,
   type Party,
   type PartyKind,
 } from "@/lib/credit-db";
 import { useI18n, reminderText } from "@/lib/i18n";
 import { DeadlinePicker, isoToDueDays } from "@/components/ikayi/DeadlinePicker";
-import { pushCredit } from "@/lib/sync";
+import { deleteCreditPerson, pushCredit } from "@/lib/sync";
 import { maybeSendUsage, trackAction } from "@/lib/usage";
 
 type FormKind = "person" | "debt" | "payment" | "edit";
@@ -224,7 +223,10 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
               if (!removing) return;
               setBusy(true);
               try {
-                await deletePerson(removing.id);
+                await deleteCreditPerson(removing.id);
+                if (localStorage.getItem("ikayi-sync-mode") === "auto" && navigator.onLine) {
+                  void pushCredit().catch(() => {});
+                }
                 try { await trackAction("person_deleted"); await maybeSendUsage(); } catch { /* */ }
                 toast.success(rw ? "Byasibwe" : "Deleted"); setRemoving(null);
               }

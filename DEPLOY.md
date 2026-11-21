@@ -20,6 +20,13 @@ Use the **Ikayi** project (not an old Stoke project). Code fallback in `src/lib/
 4. Redirect URLs: `https://ikayi-yange.vercel.app/**`
 5. Email templates: see `EMAIL_TEMPLATES.md`
 
+## Credit deletion sync
+
+Run supabase/credit_deletions.sql in the Ikayi Supabase SQL Editor before releasing the client update. It adds an account-scoped deletion table without removing existing credit records. The client syncs deletions made after the update when it knows which cloud account owns them. Earlier deletions made without a recorded marker cannot be inferred from missing rows.
+
+The updated app adds a table to the existing on-device ledger. Test an in-place update on an Android device with local-only records before publishing. Keep the old app installed if the signing key does not match, and verify a backup and restore path before any uninstall.
+
+
 ## Android APK
 
 Primary download (website + Actions release):

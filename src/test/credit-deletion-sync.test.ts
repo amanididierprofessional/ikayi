@@ -1,0 +1,127 @@
+import "fake-indexeddb/auto";
+import Dexie from "dexie";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { db, deletePerson } from "@/lib/credit-db";
+import { fullSync } from "@/lib/sync";
+
+type Row = { local_id: number; user_id: string; [key: string]: unknown };
+const cloud = vi.hoisted(() => {
+  const rows = new Map<string, Row[]>();
+  const uploads: string[] = [];
+  return {
+    rows,
+    uploads,
+    afterPaymentRead: undefined as (() => Promise<void>) | undefined,
+    auth: { getSession: async () => ({ data: { session: { user: { id: "owner" } } } }) },
+  };
+});
+vi.mock("@/lib/supabase", () => ({
+  supabaseConfigured: true,
+  ensureSupabase: async () => ({
+    auth: cloud.auth,
+    from: (table: string) => ({
+      select: () => {
+        let owner = "";
+        let cursor = 0;
+        const query = {
+          eq: (_field: string, value: string) => {
+            owner = value;
+            return query;
+          },
+          gt: (_field: string, value: number) => {
+            cursor = value;
+            return query;
+          },
+          order: () => query,
+          limit: async (limit: number) => {
+            const data = (cloud.rows.get(table) ?? [])
+              .filter((row) => row.user_id === owner && row.local_id > cursor)
+              .sort((a, b) => a.local_id - b.local_id)
+              .slice(0, limit);
+            if (table === "payments" && cloud.afterPaymentRead) {
+              const afterRead = cloud.afterPaymentRead;
+              cloud.afterPaymentRead = undefined;
+              await afterRead();
+            }
+            return { data };
+          },
+        };
+        return query;
+      },
+      upsert: async (incoming: Row[]) => {
+        cloud.uploads.push(table);
+        const merged = new Map((cloud.rows.get(table) ?? []).map((row) => [row.local_id, row]));
+        for (const row of incoming) merged.set(row.local_id, row);
+        cloud.rows.set(table, [...merged.values()]);
+        // Keep stale remote rows in this mock. The client must suppress them even
+        // if a read raced the server-side cascading delete.
+        return {};
+      },
+    }),
+  }),
+}));
+
+afterEach(async () => {
+  cloud.rows.clear();
+  cloud.uploads.length = 0;
+  cloud.afterPaymentRead = undefined;
+  await db.delete();
+});
+
+describe("credit deletion sync", () => {
+  const party = { id: 1, name: "Customer", phone: "", kind: "customer" as const, createdAt: 10 };
+  const debt = { id: 2, partyId: 1, amount: 500, createdAt: 20 };
+  const payment = { id: 3, partyId: 1, amount: 100, createdAt: 30 };
+
+  it("opens a version-two ledger, preserves its balances and records an explicit deletion", async () => {
+    const previous = new Dexie(db.name);
+    previous.version(2).stores({
+      parties: "id,kind,name",
+      debts: "id,partyId,createdAt",
+      payments: "id,partyId,createdAt",
+      settings: "key",
+      usage: "[date+path],date",
+    });
+    await previous.table("parties").add(party);
+    await previous.table("debts").add(debt);
+    await previous.table("payments").add(payment);
+    previous.close();
+    await db.open();
+
+    expect(await db.parties.toArray()).toEqual([party]);
+    expect(await db.debts.toArray()).toEqual([debt]);
+    expect(await db.payments.toArray()).toEqual([payment]);
+    expect(await db.deletedParties.count()).toBe(0);
+    await deletePerson(1, "owner");
+    expect(await db.deletedParties.get(1)).toEqual({ id: 1, owner: "owner" });
+    expect(await db.debts.count()).toBe(0);
+    expect(await db.payments.count()).toBe(0);
+  });
+
+  it("uploads known-owner deletions before records and never restores stale history or drops new local rows", async () => {
+    await db.open();
+    await deletePerson(1, "owner");
+    await deletePerson(4, "other-owner");
+    await deletePerson(5);
+    await db.parties.add({ ...party, id: 7 });
+    const user_id = "owner";
+    const created_at = new Date(10).toISOString();
+    cloud.rows.set("parties", [
+      { user_id, local_id: 1, name: "Old", kind: "customer", phone: "", created_at },
+    ]);
+    cloud.rows.set("debts", [{ user_id, local_id: 2, party_local_id: 1, amount: 500, created_at }]);
+    cloud.rows.set("payments", [
+      { user_id, local_id: 3, party_local_id: 1, amount: 100, created_at },
+    ]);
+    cloud.afterPaymentRead = async () => {
+      await db.parties.add({ ...party, id: 8 });
+    };
+
+    expect(await fullSync()).toEqual({ ok: true });
+    expect(cloud.uploads.slice(0, 2)).toEqual(["credit_party_deletions", "parties"]);
+    expect(cloud.rows.get("credit_party_deletions")).toEqual([{ user_id, local_id: 1 }]);
+    expect(await db.parties.toCollection().primaryKeys()).toEqual([7, 8]);
+    expect(await db.debts.count()).toBe(0);
+    expect(await db.payments.count()).toBe(0);
+  });
+});
