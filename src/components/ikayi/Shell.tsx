@@ -90,14 +90,16 @@ export function Shell({ children }: { children: ReactNode }) {
 
   if (checking) {
     return (
-      <div className="app-shell flex min-h-dvh flex-col items-center justify-center gap-3 px-6">
-        <img src={logo} alt="" className="size-16 rounded-2xl shadow-sm" />
-        <h1 className="text-lg font-bold tracking-tight">Ikayi Yange</h1>
-        <p className="text-xs text-muted-foreground">
-          {lang === "rw" ? "Tegereza…" : "Loading…"}
-        </p>
-        <div className="ikayi-startup-track mt-2 w-40" aria-hidden="true">
-          <span className="is-loading" />
+      <div className="ikayi-startup">
+        <div className="ikayi-startup-content">
+          <img src={logo} alt="" className="ikayi-startup-logo" />
+          <h1 className="ikayi-startup-title">Ikayi Yange</h1>
+          <p className="ikayi-startup-description">
+            {lang === "rw" ? "Tegereza gato…" : "Getting things ready…"}
+          </p>
+          <div className="ikayi-startup-track" role="progressbar" aria-label={lang === "rw" ? "Gutegura porogaramu" : "Loading Ikayi"}>
+            <span className="is-loading" />
+          </div>
         </div>
       </div>
     );
