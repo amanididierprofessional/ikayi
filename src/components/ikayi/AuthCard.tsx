@@ -6,13 +6,14 @@ import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import {
   MIN_PASSWORD,
-  completeEmailRecovery,
+  finishEmailRecoveryPassword,
   isRecoveryUrl,
   recoverPhoneWithName,
   requestPasswordReset,
   signIn,
   signUp,
   updatePassword,
+  verifyEmailRecoveryCode,
   verifyPhoneName,
   type LoginType,
 } from "@/lib/auth";
@@ -41,6 +42,8 @@ export function AuthCard({
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [phoneVerified, setPhoneVerified] = useState(false);
+  /** Email: code matched → show password card only */
+  const [emailCodeOk, setEmailCodeOk] = useState(false);
 
   useEffect(() => {
     if (isRecoveryUrl()) setMode("newpassword");
@@ -60,28 +63,16 @@ export function AuthCard({
     e.preventDefault();
     setBusy(true);
     try {
-      // Email recovery: code + new password (after mail was sent)
-      if (mode === "forgot" && tab === "email" && sent) {
+      // —— Email recovery step 2: password only (code already OK) ——
+      if (mode === "forgot" && tab === "email" && emailCodeOk) {
         if (password !== password2) {
           toast.error(rw ? "Amajambo y'ibanga ntabwo ahura" : "Passwords do not match");
           return;
         }
-        const res = await completeEmailRecovery({
-          email: identifier,
-          token: otp,
-          newPassword: password,
-        });
+        const res = await finishEmailRecoveryPassword(password);
         if (res.ok) {
           toast.success(rw ? "Ijambo ry'ibanga rihindutse — winjiye" : "Password updated — signed in");
           onAuthed();
-          return;
-        }
-        if (res.error === "bad_token" || /token|otp|invalid|expired/i.test(res.error)) {
-          toast.error(
-            rw
-              ? "Code ntabwo ari yo cyangwa yarangiye — gerageza undi"
-              : "Code is wrong or expired — try again",
-          );
           return;
         }
         if (res.error === "bad_password") {
@@ -96,18 +87,39 @@ export function AuthCard({
         return;
       }
 
+      // —— Email recovery step 1: code only ——
+      if (mode === "forgot" && tab === "email" && sent && !emailCodeOk) {
+        const res = await verifyEmailRecoveryCode({ email: identifier, token: otp });
+        if (res.ok) {
+          setEmailCodeOk(true);
+          setPassword("");
+          setPassword2("");
+          toast.success(
+            rw ? "Code ni yo — shyiraho ijambo ry'ibanga rishya" : "Code correct — set a new password",
+          );
+          return;
+        }
+        if (res.error === "bad_token" || /token|otp|invalid|expired/i.test(res.error)) {
+          toast.error(
+            rw
+              ? "Code ntabwo ari yo cyangwa yarangiye"
+              : "Code is wrong or expired",
+          );
+          return;
+        }
+        toast.error(res.error || (rw ? "Byanze" : "Failed"));
+        return;
+      }
+
       if (mode === "forgot") {
         if (tab === "email") {
           const res = await requestPasswordReset(identifier, "email");
           if (res.ok) {
             setSent(true);
+            setEmailCodeOk(false);
             setOtp("");
-            setPassword("");
-            setPassword2("");
             toast.success(
-              rw
-                ? "Reba imeyili — shyiramo code n'ijambo rishya hano"
-                : "Check your email — enter the code and new password here",
+              rw ? "Reba imeyili — shyiramo code gusa" : "Check your email — enter the code only",
             );
             return;
           }
@@ -139,8 +151,8 @@ export function AuthCard({
           if (res.error === "rpc_missing") {
             toast.error(
               rw
-                ? "Koresha SQL: verify_phone_name mu Supabase SQL Editor"
-                : "Run verify_phone_name SQL in Supabase SQL Editor",
+                ? "Koresha SQL phone_recovery_all mu Supabase"
+                : "Run phone_recovery_all SQL in Supabase",
             );
             return;
           }
@@ -162,11 +174,9 @@ export function AuthCard({
           onAuthed();
           return;
         }
-        if (res.error === "need_email_or_function") {
+        if (res.error === "rpc_missing") {
           toast.error(
-            rw
-              ? "Koresha Email recovery (code) cyangwa Edge Function phone-recover"
-              : "Use Email recovery (code) for cloud password, or deploy phone-recover",
+            rw ? "Koresha SQL phone_recovery_all mu Supabase" : "Run phone_recovery_all SQL in Supabase",
           );
           return;
         }
@@ -251,31 +261,28 @@ export function AuthCard({
 
   const phoneStep1 = mode === "forgot" && tab === "phone" && !phoneVerified;
   const phoneStep2 = mode === "forgot" && tab === "phone" && phoneVerified;
-  const emailCodeStep = mode === "forgot" && tab === "email" && sent;
+  const emailCodeStep = mode === "forgot" && tab === "email" && sent && !emailCodeOk;
+  const emailPassStep = mode === "forgot" && tab === "email" && emailCodeOk;
 
-  const title = emailCodeStep
+  const title = emailPassStep || phoneStep2 || mode === "newpassword"
     ? rw
-      ? "Shyiramo code n'ijambo rishya"
-      : "Enter code & new password"
-    : phoneStep2
+      ? "Shyiraho ijambo ry'ibanga rishya"
+      : "Set a new password"
+    : emailCodeStep
       ? rw
-        ? "Shyiraho ijambo ry'ibanga rishya"
-        : "Set a new password"
+        ? "Shyiramo code yo muri email"
+        : "Enter the code from email"
       : mode === "forgot"
         ? rw
           ? "Wibagiwe ijambo ry'ibanga?"
           : "Forgot your password?"
-        : mode === "newpassword"
+        : mode === "login"
           ? rw
-            ? "Shyiraho ijambo ry'ibanga rishya"
-            : "Set a new password"
-          : mode === "login"
-            ? rw
-              ? "Murakaza neza kuri Ikayi Yange"
-              : "Welcome to Ikayi Yange"
-            : rw
-              ? "Fungura konti ya Ikayi Yange"
-              : "Create your Ikayi Yange account";
+            ? "Murakaza neza kuri Ikayi Yange"
+            : "Welcome to Ikayi Yange"
+          : rw
+            ? "Fungura konti ya Ikayi Yange"
+            : "Create your Ikayi Yange account";
 
   return (
     <div className="auth-overlay">
@@ -290,27 +297,31 @@ export function AuthCard({
         <p className="mb-5 mt-2 text-center text-sm text-muted-foreground">
           {emailCodeStep
             ? rw
-              ? "Copy code muri email, hanyuma shyiraho ijambo ry'ibanga rishya"
-              : "Paste the code from your email, then choose a new password"
-            : phoneStep1
+              ? "Shyiramo code gusa — niba ihuye tuzaguha form y'ijambo rishya"
+              : "Enter the code only — if it matches, we show the new password form"
+            : emailPassStep
               ? rw
-                ? "Shyiramo izina n'telefone byanditswe gusa"
-                : "Enter only your registered name and phone"
-              : phoneStep2
+                ? "Code yemejwe. Hitamo ijambo ry'ibanga rishya"
+                : "Code verified. Choose a new password"
+              : phoneStep1
                 ? rw
-                  ? "Byemejwe. Hitamo ijambo ry'ibanga rishya"
-                  : "Verified. Choose a new password"
-                : mode === "forgot" && tab === "email"
+                  ? "Shyiramo izina n'telefone byanditswe gusa"
+                  : "Enter only your registered name and phone"
+                : phoneStep2
                   ? rw
-                    ? "Twakohereza code kuri imeyili yawe"
-                    : "We send a code to your email"
-                  : mode === "signup"
+                    ? "Byemejwe. Hitamo ijambo ry'ibanga rishya"
+                    : "Verified. Choose a new password"
+                  : mode === "forgot" && tab === "email"
                     ? rw
-                      ? "Izina rimwe + telefone/email + ijambo ry'ibanga"
-                      : "One name + phone/email + password"
-                    : rw
-                      ? "Ikayi Yange · amadeni yawe"
-                      : "Ikayi Yange · your credit book"}
+                      ? "Twakohereza code kuri imeyili yawe"
+                      : "We send a code to your email"
+                    : mode === "signup"
+                      ? rw
+                        ? "Izina rimwe + telefone/email + ijambo ry'ibanga"
+                        : "One name + phone/email + password"
+                      : rw
+                        ? "Ikayi Yange · amadeni yawe"
+                        : "Ikayi Yange · your credit book"}
         </p>
 
         {ask ? (
@@ -335,7 +346,7 @@ export function AuthCard({
           </div>
         ) : (
           <form className="space-y-4" onSubmit={submit}>
-            {mode !== "newpassword" && !phoneStep2 && !emailCodeStep && (
+            {mode !== "newpassword" && !phoneStep2 && !emailCodeStep && !emailPassStep && (
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1" role="tablist">
                 {(["phone", "email"] as const).map((k) => (
                   <Button
@@ -351,6 +362,7 @@ export function AuthCard({
                       setTab(k);
                       setPhoneVerified(false);
                       setSent(false);
+                      setEmailCodeOk(false);
                     }}
                   >
                     {k === "phone" ? <Phone className="size-4" /> : <Mail className="size-4" />}
@@ -375,7 +387,7 @@ export function AuthCard({
               </label>
             )}
 
-            {mode !== "newpassword" && !phoneStep2 && !emailCodeStep && (
+            {mode !== "newpassword" && !phoneStep2 && !emailCodeStep && !emailPassStep && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {t(tab)}
                 <Input
@@ -414,9 +426,9 @@ export function AuthCard({
               mode === "signup" ||
               mode === "newpassword" ||
               phoneStep2 ||
-              emailCodeStep) && (
+              emailPassStep) && (
               <label className="block space-y-1.5 text-sm font-medium">
-                {mode === "newpassword" || phoneStep2 || emailCodeStep
+                {mode === "newpassword" || phoneStep2 || emailPassStep
                   ? rw
                     ? "Ijambo ry'ibanga rishya"
                     : "New password"
@@ -444,7 +456,7 @@ export function AuthCard({
               </label>
             )}
 
-            {(mode === "newpassword" || phoneStep2 || emailCodeStep) && (
+            {(mode === "newpassword" || phoneStep2 || emailPassStep) && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {rw ? "Ongera wandike ijambo ry'ibanga" : "Confirm new password"}
                 <Input
@@ -465,7 +477,12 @@ export function AuthCard({
                 t("pleaseWait")
               ) : emailCodeStep ? (
                 <>
-                  {rw ? "Emeza code & bika" : "Verify code & save"}
+                  <KeyRound className="size-4" />
+                  {rw ? "Emeza code" : "Verify code"}
+                </>
+              ) : emailPassStep || phoneStep2 || mode === "newpassword" ? (
+                <>
+                  {rw ? "Bika ijambo ry'ibanga" : "Save new password"}
                   <ArrowRight className="size-4" />
                 </>
               ) : phoneStep1 ? (
@@ -477,11 +494,6 @@ export function AuthCard({
                 <>
                   <KeyRound className="size-4" />
                   {rw ? "Kohereza code" : "Send code"}
-                </>
-              ) : phoneStep2 || mode === "newpassword" ? (
-                <>
-                  {rw ? "Bika ijambo ry'ibanga" : "Save new password"}
-                  <ArrowRight className="size-4" />
                 </>
               ) : (
                 <>
@@ -497,6 +509,7 @@ export function AuthCard({
                 className="w-full py-2 text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
                 onClick={() => {
                   setSent(false);
+                  setEmailCodeOk(false);
                   setPhoneVerified(false);
                   setOtp("");
                   setDisplayName("");
@@ -531,6 +544,7 @@ export function AuthCard({
                 className="w-full py-2 text-center text-xs text-muted-foreground underline-offset-2 hover:underline"
                 onClick={() => {
                   setSent(false);
+                  setEmailCodeOk(false);
                   setPhoneVerified(false);
                   setOtp("");
                   setPassword("");
