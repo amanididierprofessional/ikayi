@@ -198,12 +198,12 @@ export function Shell({ children }: { children: ReactNode }) {
               {lang === "rw" ? "Emera kubika amakuru byikora" : "Enable automatic backup"}
             </Button>
             <Button variant="outline" className="h-12 w-full rounded-full" onClick={() => finishSyncSetup(false)}>
-              {lang === "rw" ? "Komeza utabikoresheje" : "Continue without automatic backup"}
+              {lang === "rw" ? "Komeza utabishyizeho ubu" : "Continue without enabling it now"}
             </Button>
             <p className="px-2 text-center text-xs leading-relaxed text-muted-foreground">
               {lang === "rw"
-                ? "Ihitamo ryawe ushobora kurihindura igihe icyo ari cyo cyose mu Igenamiterere."
-                : "You can change this choice at any time in Settings."}
+                ? "Nuhitamo kutabikoresha, amakuru yawe azaguma kuri iyi telefone kugeza uyahuje n'andi ubwawe. Ushobora guhindura iri hitamo igihe icyo ari cyo cyose mu Igenamiterere."
+                : "If you skip, your data stays on this phone until you sync it manually. You can change this choice at any time in Settings."}
             </p>
           </div>
         </DrawerContent>
