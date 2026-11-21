@@ -177,9 +177,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
       {!authed && <AuthCard onAuthed={onAuthed} onOffline={onOffline} />}
 
-      <Drawer open={syncSetupOpen} onOpenChange={(open) => {
-        if (!open) finishSyncSetup(false);
-      }}>
+      <Drawer open={syncSetupOpen} onOpenChange={setSyncSetupOpen}>
         <DrawerContent className="mx-auto max-w-md">
           <DrawerHeader className="text-left">
             <div className="mb-2 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
