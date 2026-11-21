@@ -160,13 +160,50 @@ export async function signOutLocal() {
   if (client) await client.auth.signOut().catch(() => {});
 }
 
+/** Send Supabase recovery email (real inbox only works for email sign-up). */
 export async function requestPasswordReset(emailOrPhone: string, loginType: LoginType) {
   const client = await ensureSupabase();
   if (!client || !supabaseConfigured) return { ok: false as const, error: "no_cloud" };
-  const email = loginType === "email" ? emailOrPhone.trim().toLowerCase() : syntheticEmail(emailOrPhone);
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return { ok: false as const, error: "offline" };
+  }
+  const email =
+    loginType === "email"
+      ? emailOrPhone.trim().toLowerCase()
+      : syntheticEmail(emailOrPhone);
+  if (!email || (loginType === "email" && !email.includes("@"))) {
+    return { ok: false as const, error: "bad_id" };
+  }
+  const redirectTo =
+    typeof window !== "undefined" ? `${window.location.origin}/` : undefined;
   const { error } = await client.auth.resetPasswordForEmail(email, {
-    ...(typeof window !== "undefined" ? { redirectTo: `${window.location.origin}/` } : {}),
+    ...(redirectTo ? { redirectTo } : {}),
   });
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
+}
+
+/** After recovery link: set a new password (session must be recovery type). */
+export async function updatePassword(newPassword: string): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  if (newPassword.length < MIN_PASSWORD) return { ok: false, error: "bad_password" };
+  const client = await ensureSupabase();
+  if (!client || !supabaseConfigured) return { ok: false, error: "no_cloud" };
+  const { error } = await client.auth.updateUser({ password: newPassword });
+  if (error) return { ok: false, error: error.message };
+  setLoggedIn(true);
+  return { ok: true };
+}
+
+/** True when URL hash/search indicates password recovery session. */
+export function isRecoveryUrl(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hash || "";
+  const s = window.location.search || "";
+  return (
+    /type=recovery/i.test(h) ||
+    /type=recovery/i.test(s) ||
+    /type=recovery/i.test(window.location.href)
+  );
 }
