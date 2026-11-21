@@ -25,7 +25,7 @@ type Mode = "login" | "signup" | "forgot" | "newpassword";
 export function AuthCard({
   onAuthed,
 }: {
-  onAuthed: () => void;
+  onAuthed: (isNewAccount?: boolean) => void;
   onOffline?: () => void;
 }) {
   const { lang, t } = useI18n();
@@ -241,7 +241,7 @@ export function AuthCard({
       });
       if (res.ok) {
         toast.success(rw ? "Konti yafunguwe" : "Account created");
-        onAuthed();
+        onAuthed(true);
         return;
       }
       if (res.error === "exists") {
