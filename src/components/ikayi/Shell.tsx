@@ -1,13 +1,18 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BookUser, HandCoins, Settings2, Wifi, WifiOff } from "lucide-react";
+import { BookUser, Cloud, HandCoins, Settings2, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { toast } from "sonner";
+import { fullSync } from "@/lib/sync";
 import { useI18n } from "@/lib/i18n";
 import { isLoggedIn } from "@/lib/auth";
 import { enterAppMode, isAppMode } from "@/lib/app-mode";
 import { AuthCard } from "./AuthCard";
 import { useConnectivity } from "@/hooks/use-connectivity";
 import logo from "@/assets/ikayi-logo.png";
+
+const AUTO_SYNC_KEY = "ikayi-sync-mode";
 
 /**
  * App chrome: header + content + Stoke-style floating bottom pill nav.
@@ -19,6 +24,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const online = useConnectivity();
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [syncSetupOpen, setSyncSetupOpen] = useState(false);
   const isLanding =
     path === "/welcome" ||
     path.startsWith("/welcome/") ||
@@ -49,7 +55,22 @@ export function Shell({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const onAuthed = useCallback(() => setAuthed(true), []);
+  const onAuthed = useCallback((isNewAccount = false) => {
+    setAuthed(true);
+    if (isNewAccount) setSyncSetupOpen(true);
+  }, []);
+  const finishSyncSetup = useCallback((enabled: boolean) => {
+    try {
+      localStorage.setItem(AUTO_SYNC_KEY, enabled ? "auto" : "manual");
+    } catch {
+      toast.error(lang === "rw" ? "Ihitamo ntiryabitswe. Ongera ugerageze mu igenamiterere." : "Your choice could not be saved. Try again in Settings.");
+    }
+    setSyncSetupOpen(false);
+    if (enabled) {
+      void fullSync().catch((error) => console.error("Initial automatic sync failed", error));
+      toast.success(lang === "rw" ? "Guhuza amakuru byikora byemejwe" : "Automatic sync enabled");
+    }
+  }, [lang]);
   const onOffline = useCallback(() => {
     sessionStorage.setItem("ikayi-device-mode", "1");
     setAuthed(true);
@@ -155,6 +176,38 @@ export function Shell({ children }: { children: ReactNode }) {
       </nav>
 
       {!authed && <AuthCard onAuthed={onAuthed} onOffline={onOffline} />}
+
+      <Drawer open={syncSetupOpen} onOpenChange={(open) => {
+        if (!open) finishSyncSetup(false);
+      }}>
+        <DrawerContent className="mx-auto max-w-md">
+          <DrawerHeader className="text-left">
+            <div className="mb-2 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Cloud className="size-5" />
+            </div>
+            <DrawerTitle>{lang === "rw" ? "Wifuza ko amakuru abikwa kuri murandasi?" : "Back up your data automatically?"}</DrawerTitle>
+            <DrawerDescription>
+              {lang === "rw"
+                ? "Iyo telefone ifite murandasi, Ikayi izajya ihuza amakuru yawe kugira ngo uzabashe kuyagarura igihe uhinduye telefone."
+                : "When your phone has internet, Ikayi will sync your data so you can restore it if you change phones."}
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="space-y-3 p-4 pb-8">
+            <Button className="h-12 w-full rounded-full" onClick={() => finishSyncSetup(true)}>
+              <Cloud className="size-4" />
+              {lang === "rw" ? "Emera kubika amakuru byikora" : "Enable automatic backup"}
+            </Button>
+            <Button variant="outline" className="h-12 w-full rounded-full" onClick={() => finishSyncSetup(false)}>
+              {lang === "rw" ? "Komeza utabikoresheje" : "Continue without automatic backup"}
+            </Button>
+            <p className="px-2 text-center text-xs leading-relaxed text-muted-foreground">
+              {lang === "rw"
+                ? "Ihitamo ryawe ushobora kurihindura igihe icyo ari cyo cyose mu Igenamiterere."
+                : "You can change this choice at any time in Settings."}
+            </p>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }
