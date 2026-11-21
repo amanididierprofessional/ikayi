@@ -60,13 +60,15 @@ export function Shell({ children }: { children: ReactNode }) {
     if (isNewAccount) setSyncSetupOpen(true);
   }, []);
   const finishSyncSetup = useCallback((enabled: boolean) => {
+    let saved = false;
     try {
       localStorage.setItem(AUTO_SYNC_KEY, enabled ? "auto" : "manual");
+      saved = true;
     } catch {
       toast.error(lang === "rw" ? "Ihitamo ntiryabitswe. Ongera ugerageze mu igenamiterere." : "Your choice could not be saved. Try again in Settings.");
     }
     setSyncSetupOpen(false);
-    if (enabled) {
+    if (enabled && saved) {
       void fullSync().catch((error) => console.error("Initial automatic sync failed", error));
       toast.success(lang === "rw" ? "Guhuza amakuru byikora byemejwe" : "Automatic sync enabled");
     }
