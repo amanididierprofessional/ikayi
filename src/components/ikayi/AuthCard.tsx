@@ -12,6 +12,7 @@ import {
   signIn,
   signUp,
   updatePassword,
+  verifyPhoneName,
   type LoginType,
 } from "@/lib/auth";
 import { ensureSupabase } from "@/lib/supabase";
@@ -37,6 +38,8 @@ export function AuthCard({
   const [password2, setPassword2] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  /** Phone recovery: only show password fields after name+phone match */
+  const [phoneVerified, setPhoneVerified] = useState(false);
 
   useEffect(() => {
     if (isRecoveryUrl()) setMode("newpassword");
@@ -56,7 +59,6 @@ export function AuthCard({
     e.preventDefault();
     setBusy(true);
     try {
-      // —— Forgot: email → reset link; phone → name + phone + new password ——
       if (mode === "forgot") {
         if (tab === "email") {
           const res = await requestPasswordReset(identifier, "email");
@@ -77,7 +79,46 @@ export function AuthCard({
           return;
         }
 
-        // Phone recovery
+        // Phone: STEP 1 — name + phone only
+        if (!phoneVerified) {
+          const res = await verifyPhoneName({
+            displayName,
+            phone: identifier,
+          });
+          if (res.ok) {
+            setPhoneVerified(true);
+            toast.success(
+              rw
+                ? "Byemejwe — shyiraho ijambo ry'ibanga rishya"
+                : "Verified — set your new password",
+            );
+            return;
+          }
+          if (res.error === "mismatch") {
+            toast.error(
+              rw
+                ? "Izina cyangwa telefone ntabwo bihura n'ibyo byanditswe"
+                : "Name or phone does not match our records",
+            );
+            return;
+          }
+          if (res.error === "rpc_missing") {
+            toast.error(
+              rw
+                ? "Seriveri ntabwo yateguwe (verify_phone_name). Koresha SQL mu dashboard."
+                : "Server not ready (run verify_phone_name SQL). See docs.",
+            );
+            return;
+          }
+          if (res.error === "bad_name") {
+            toast.error(rw ? "Shyiramo izina ryawe" : "Enter your name");
+            return;
+          }
+          toast.error(rw ? "Kugerageza byanze" : "Could not verify");
+          return;
+        }
+
+        // Phone: STEP 2 — new password only (already verified)
         if (password !== password2) {
           toast.error(rw ? "Amajambo y'ibanga ntabwo ahura" : "Passwords do not match");
           return;
@@ -92,18 +133,6 @@ export function AuthCard({
           onAuthed();
           return;
         }
-        if (res.error === "mismatch") {
-          toast.error(
-            rw
-              ? "Izina cyangwa telefone ntabwo bihura n'ibyo wanditse"
-              : "Name or phone does not match our records",
-          );
-          return;
-        }
-        if (res.error === "bad_name") {
-          toast.error(rw ? "Shyiramo izina ryawe" : "Enter your name");
-          return;
-        }
         if (res.error === "bad_password") {
           toast.error(
             rw
@@ -114,8 +143,8 @@ export function AuthCard({
         }
         toast.error(
           rw
-            ? "Kugarura byanze. Gerageza nanone cyangwa koresha email."
-            : "Recovery failed. Try again or use email reset.",
+            ? "Guhindura byanze. Gerageza nanone."
+            : "Could not update password. Try again.",
         );
         return;
       }
@@ -177,7 +206,6 @@ export function AuthCard({
         return;
       }
 
-      // Signup
       const res = await signUp({
         loginType: tab,
         identifier,
@@ -212,8 +240,14 @@ export function AuthCard({
     }
   }
 
-  const title =
-    mode === "forgot"
+  const phoneStep1 = mode === "forgot" && tab === "phone" && !phoneVerified;
+  const phoneStep2 = mode === "forgot" && tab === "phone" && phoneVerified;
+
+  const title = phoneStep2
+    ? rw
+      ? "Shyiraho ijambo ry'ibanga rishya"
+      : "Set a new password"
+    : mode === "forgot"
       ? rw
         ? "Wibagiwe ijambo ry'ibanga?"
         : "Forgot your password?"
@@ -240,25 +274,29 @@ export function AuthCard({
         <img src={logo} alt="Ikayi Yange" className="mx-auto size-20 rounded-2xl" />
         <h2 className="mt-4 text-center text-xl font-bold sm:mt-5 sm:text-2xl">{title}</h2>
         <p className="mb-5 mt-2 text-center text-sm text-muted-foreground">
-          {mode === "forgot"
-            ? tab === "email"
+          {phoneStep1
+            ? rw
+              ? "Shyiramo izina n'telefone byanditswe gusa — tuzagerageza mbere"
+              : "Enter only your registered name and phone — we verify first"
+            : phoneStep2
               ? rw
-                ? "Twakohereza link kuri imeyili yawe"
-                : "We email a reset link to your address"
-              : rw
-                ? "Shyiramo izina n'telefone byanditswe, n'ijambo rishya"
-                : "Enter your registered name, phone, and a new password"
-            : mode === "newpassword"
-              ? rw
-                ? "Hitamo ijambo ry'ibanga woroshye kwibuka"
-                : "Choose a password you can remember"
-              : mode === "signup"
+                ? "Byemejwe. Hitamo ijambo ry'ibanga rishya"
+                : "Verified. Choose a new password"
+              : mode === "forgot" && tab === "email"
                 ? rw
-                  ? "Izina rimwe + telefone/email + ijambo ry'ibanga"
-                  : "One name + phone/email + password"
-                : rw
-                  ? "Ikayi Yange · amadeni yawe"
-                  : "Ikayi Yange · your credit book"}
+                  ? "Twakohereza link kuri imeyili yawe"
+                  : "We email a reset link to your address"
+                : mode === "newpassword"
+                  ? rw
+                    ? "Hitamo ijambo ry'ibanga woroshye kwibuka"
+                    : "Choose a password you can remember"
+                  : mode === "signup"
+                    ? rw
+                      ? "Izina rimwe + telefone/email + ijambo ry'ibanga"
+                      : "One name + phone/email + password"
+                    : rw
+                      ? "Ikayi Yange · amadeni yawe"
+                      : "Ikayi Yange · your credit book"}
         </p>
 
         {ask ? (
@@ -289,8 +327,8 @@ export function AuthCard({
             <p className="text-sm font-medium">{rw ? "Reba imeyili yawe" : "Check your email"}</p>
             <p className="text-xs text-muted-foreground">
               {rw
-                ? "Kanda link (cyangwa code). Reba n'isubiza (spam)."
-                : "Open the link (or code). Check spam too."}
+                ? "Kanda link. Reba n'isubiza (spam). Niba nta message — reba SMTP port 587."
+                : "Open the link. Check spam. If nothing arrives — SMTP port must be 587."}
             </p>
             <Button
               type="button"
@@ -306,7 +344,7 @@ export function AuthCard({
           </div>
         ) : (
           <form className="space-y-4" onSubmit={submit}>
-            {mode !== "newpassword" && (
+            {mode !== "newpassword" && !phoneStep2 && (
               <div className="grid grid-cols-2 gap-1 rounded-full bg-muted p-1" role="tablist">
                 {(["phone", "email"] as const).map((k) => (
                   <Button
@@ -318,7 +356,10 @@ export function AuthCard({
                     className={`h-11 rounded-full ${
                       tab === k ? "bg-card text-primary shadow-card" : "text-muted-foreground"
                     }`}
-                    onClick={() => setTab(k)}
+                    onClick={() => {
+                      setTab(k);
+                      setPhoneVerified(false);
+                    }}
                   >
                     {k === "phone" ? <Phone className="size-4" /> : <Mail className="size-4" />}
                     {t(k)}
@@ -327,8 +368,7 @@ export function AuthCard({
               </div>
             )}
 
-            {/* Name first on phone recovery & on signup */}
-            {(mode === "signup" || (mode === "forgot" && tab === "phone")) && (
+            {(mode === "signup" || phoneStep1) && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {rw ? "Izina ryawe (rimwe)" : "Your name (one name)"}
                 <Input
@@ -343,7 +383,7 @@ export function AuthCard({
               </label>
             )}
 
-            {mode !== "newpassword" && (
+            {mode !== "newpassword" && !phoneStep2 && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {t(tab)}
                 <Input
@@ -361,9 +401,9 @@ export function AuthCard({
             {(mode === "login" ||
               mode === "signup" ||
               mode === "newpassword" ||
-              (mode === "forgot" && tab === "phone")) && (
+              phoneStep2) && (
               <label className="block space-y-1.5 text-sm font-medium">
-                {mode === "newpassword" || (mode === "forgot" && tab === "phone")
+                {mode === "newpassword" || phoneStep2
                   ? rw
                     ? "Ijambo ry'ibanga rishya"
                     : "New password"
@@ -391,7 +431,7 @@ export function AuthCard({
               </label>
             )}
 
-            {(mode === "newpassword" || (mode === "forgot" && tab === "phone")) && (
+            {(mode === "newpassword" || phoneStep2) && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {rw ? "Ongera wandike ijambo ry'ibanga" : "Confirm new password"}
                 <Input
@@ -410,18 +450,17 @@ export function AuthCard({
             <Button type="submit" disabled={busy} className="h-12 w-full rounded-full text-base">
               {busy ? (
                 t("pleaseWait")
-              ) : mode === "forgot" ? (
+              ) : phoneStep1 ? (
                 <>
                   <KeyRound className="size-4" />
-                  {tab === "email"
-                    ? rw
-                      ? "Kohereza link"
-                      : "Send reset link"
-                    : rw
-                      ? "Bika ijambo rishya"
-                      : "Save new password"}
+                  {rw ? "Emeza izina n'telefone" : "Verify name & phone"}
                 </>
-              ) : mode === "newpassword" ? (
+              ) : mode === "forgot" && tab === "email" ? (
+                <>
+                  <KeyRound className="size-4" />
+                  {rw ? "Kohereza link" : "Send reset link"}
+                </>
+              ) : phoneStep2 || mode === "newpassword" ? (
                 <>
                   {rw ? "Bika ijambo ry'ibanga" : "Save new password"}
                   <ArrowRight className="size-4" />
@@ -440,6 +479,7 @@ export function AuthCard({
                 className="w-full py-2 text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
                 onClick={() => {
                   setSent(false);
+                  setPhoneVerified(false);
                   setDisplayName("");
                   setPassword("");
                   setPassword2("");
@@ -472,6 +512,7 @@ export function AuthCard({
                 className="w-full py-2 text-center text-xs text-muted-foreground underline-offset-2 hover:underline"
                 onClick={() => {
                   setSent(false);
+                  setPhoneVerified(false);
                   setPassword("");
                   setPassword2("");
                   setDisplayName("");
