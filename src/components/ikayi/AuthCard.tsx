@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import {
   MIN_PASSWORD,
   isRecoveryUrl,
+  recoverPhoneWithName,
   requestPasswordReset,
   signIn,
   signUp,
@@ -22,7 +23,6 @@ export function AuthCard({
   onAuthed,
 }: {
   onAuthed: () => void;
-  /** Kept for Shell compatibility; offline-only entry removed from UI. */
   onOffline?: () => void;
 }) {
   const { lang, t } = useI18n();
@@ -32,12 +32,12 @@ export function AuthCard({
   const [show, setShow] = useState(false);
   const [ask, setAsk] = useState(false);
   const [identifier, setIdentifier] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
 
-  // Recovery link from email → show set-new-password form
   useEffect(() => {
     if (isRecoveryUrl()) setMode("newpassword");
     let unsub: (() => void) | undefined;
@@ -56,30 +56,67 @@ export function AuthCard({
     e.preventDefault();
     setBusy(true);
     try {
+      // —— Forgot: email → reset link; phone → name + phone + new password ——
       if (mode === "forgot") {
-        const res = await requestPasswordReset(identifier, tab);
-        if (res.ok) {
-          setSent(true);
-          toast.success(
-            rw
-              ? "Reba imeyili yawe (n'inbox n'isubiza) — twohereje link yo guhindura ijambo ry'ibanga"
-              : "Check your email (inbox & spam) — we sent a reset link",
-          );
+        if (tab === "email") {
+          const res = await requestPasswordReset(identifier, "email");
+          if (res.ok) {
+            setSent(true);
+            toast.success(
+              rw
+                ? "Reba imeyili yawe (inbox + spam) — twohereje link"
+                : "Check your email (inbox + spam) — we sent a reset link",
+            );
+            return;
+          }
+          if (res.error === "no_cloud" || res.error === "offline") {
+            toast.error(rw ? "Ukeneye murandasi" : "You need internet");
+            return;
+          }
+          toast.error(res.error || (rw ? "Kohereza byanze" : "Could not send email"));
           return;
         }
-        if (res.error === "no_cloud" || res.error === "offline") {
+
+        // Phone recovery
+        if (password !== password2) {
+          toast.error(rw ? "Amajambo y'ibanga ntabwo ahura" : "Passwords do not match");
+          return;
+        }
+        const res = await recoverPhoneWithName({
+          displayName,
+          phone: identifier,
+          newPassword: password,
+        });
+        if (res.ok) {
+          toast.success(rw ? "Ijambo ry'ibanga rihindutse — winjiye" : "Password updated — signed in");
+          onAuthed();
+          return;
+        }
+        if (res.error === "mismatch") {
           toast.error(
             rw
-              ? "Ukeneye murandasi n'cloud kugira ngo usubize ijambo ry'ibanga"
-              : "You need internet and cloud to reset your password",
+              ? "Izina cyangwa telefone ntabwo bihura n'ibyo wanditse"
+              : "Name or phone does not match our records",
           );
           return;
         }
-        if (res.error === "bad_id") {
-          toast.error(rw ? "Shyiramo email cyangwa telefone nyayo" : "Enter a valid email or phone");
+        if (res.error === "bad_name") {
+          toast.error(rw ? "Shyiramo izina ryawe" : "Enter your name");
           return;
         }
-        toast.error(res.error || (rw ? "Kohereza byanze" : "Could not send reset email"));
+        if (res.error === "bad_password") {
+          toast.error(
+            rw
+              ? `Ijambo ry'ibanga byibuze ${MIN_PASSWORD}`
+              : `Password at least ${MIN_PASSWORD} characters`,
+          );
+          return;
+        }
+        toast.error(
+          rw
+            ? "Kugarura byanze. Gerageza nanone cyangwa koresha email."
+            : "Recovery failed. Try again or use email reset.",
+        );
         return;
       }
 
@@ -90,20 +127,11 @@ export function AuthCard({
         }
         const res = await updatePassword(password);
         if (res.ok) {
-          toast.success(rw ? "Ijambo ry'ibanga rihindutse — winjiye" : "Password updated — you are signed in");
-          // Clean recovery hash from URL
+          toast.success(rw ? "Ijambo ry'ibanga rihindutse" : "Password updated");
           if (typeof window !== "undefined" && window.history.replaceState) {
             window.history.replaceState(null, "", window.location.pathname || "/");
           }
           onAuthed();
-          return;
-        }
-        if (res.error === "bad_password") {
-          toast.error(
-            rw
-              ? `Ijambo ry'ibanga rigomba kuba byibuze inyuguti ${MIN_PASSWORD}`
-              : `Password must be at least ${MIN_PASSWORD} characters`,
-          );
           return;
         }
         toast.error(res.error || (rw ? "Guhindura byanze" : "Could not update password"));
@@ -136,8 +164,8 @@ export function AuthCard({
           }
           toast.error(
             rw
-              ? "Ntabwo winjiye. Gerageza ijambo ry'ibanga cyangwa fungura konti nshya"
-              : "Could not sign in. Check password or create a new account",
+              ? "Ntabwo winjiye. Gerageza cyangwa fungura konti"
+              : "Could not sign in. Check details or create an account",
           );
           return;
         }
@@ -149,7 +177,13 @@ export function AuthCard({
         return;
       }
 
-      const res = await signUp({ loginType: tab, identifier, password });
+      // Signup
+      const res = await signUp({
+        loginType: tab,
+        identifier,
+        password,
+        displayName,
+      });
       if (res.ok) {
         toast.success(rw ? "Konti yafunguwe" : "Account created");
         onAuthed();
@@ -160,11 +194,15 @@ export function AuthCard({
         setMode("login");
         return;
       }
+      if (res.error === "bad_name") {
+        toast.error(rw ? "Shyiramo izina rimwe (ryawe)" : "Enter one name (yours)");
+        return;
+      }
       if (res.error === "bad_password") {
         toast.error(
           rw
-            ? `Ijambo ry'ibanga rigomba kuba byibuze inyuguti ${MIN_PASSWORD}`
-            : `Password must be at least ${MIN_PASSWORD} characters`,
+            ? `Ijambo ry'ibanga byibuze ${MIN_PASSWORD}`
+            : `Password at least ${MIN_PASSWORD} characters`,
         );
         return;
       }
@@ -203,27 +241,30 @@ export function AuthCard({
         <h2 className="mt-4 text-center text-xl font-bold sm:mt-5 sm:text-2xl">{title}</h2>
         <p className="mb-5 mt-2 text-center text-sm text-muted-foreground">
           {mode === "forgot"
-            ? rw
-              ? "Twakohereza link kuri email ya konti yawe"
-              : "We will email a reset link to your account"
+            ? tab === "email"
+              ? rw
+                ? "Twakohereza link kuri imeyili yawe"
+                : "We email a reset link to your address"
+              : rw
+                ? "Shyiramo izina n'telefone byanditswe, n'ijambo rishya"
+                : "Enter your registered name, phone, and a new password"
             : mode === "newpassword"
               ? rw
                 ? "Hitamo ijambo ry'ibanga woroshye kwibuka"
                 : "Choose a password you can remember"
-              : rw
-                ? "Ikayi Yange · amadeni yawe"
-                : "Ikayi Yange · your credit book"}
+              : mode === "signup"
+                ? rw
+                  ? "Izina rimwe + telefone/email + ijambo ry'ibanga"
+                  : "One name + phone/email + password"
+                : rw
+                  ? "Ikayi Yange · amadeni yawe"
+                  : "Ikayi Yange · your credit book"}
         </p>
 
         {ask ? (
           <div className="space-y-4">
             <p className="text-center font-semibold">
               {rw ? "Uri mushya kuri Ikayi Yange?" : "New to Ikayi Yange?"}
-            </p>
-            <p className="text-center text-xs text-muted-foreground">
-              {rw
-                ? "Nta konti yabonetse. Uri gushaka kwiyandikisha?"
-                : "No account found. Would you like to sign up?"}
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Button variant="outline" className="h-12 rounded-full" onClick={() => setAsk(false)}>
@@ -245,18 +286,11 @@ export function AuthCard({
             <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Mail className="size-7" />
             </div>
-            <p className="text-sm font-medium">
-              {rw ? "Reba imeyili yawe" : "Check your email"}
-            </p>
+            <p className="text-sm font-medium">{rw ? "Reba imeyili yawe" : "Check your email"}</p>
             <p className="text-xs text-muted-foreground">
               {rw
-                ? "Kanda link twohereje (cyangwa code) kugira ngo ushyireho ijambo ry'ibanga rishya. Reba n'isubiza (spam)."
-                : "Open the link we sent (or use the code) to set a new password. Check spam too."}
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              {rw
-                ? "Wiyandikishije na telefone gusa? Recovery ikenera email nyayo yashyizweho konti."
-                : "Signed up with phone only? Recovery needs a real email on the account."}
+                ? "Kanda link (cyangwa code). Reba n'isubiza (spam)."
+                : "Open the link (or code). Check spam too."}
             </p>
             <Button
               type="button"
@@ -293,6 +327,22 @@ export function AuthCard({
               </div>
             )}
 
+            {/* Name first on phone recovery & on signup */}
+            {(mode === "signup" || (mode === "forgot" && tab === "phone")) && (
+              <label className="block space-y-1.5 text-sm font-medium">
+                {rw ? "Izina ryawe (rimwe)" : "Your name (one name)"}
+                <Input
+                  type="text"
+                  autoComplete="given-name"
+                  required
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="h-12 rounded-xl text-base"
+                  placeholder={rw ? "Urugero: Didier" : "e.g. Didier"}
+                />
+              </label>
+            )}
+
             {mode !== "newpassword" && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {t(tab)}
@@ -308,17 +358,12 @@ export function AuthCard({
               </label>
             )}
 
-            {mode === "forgot" && tab === "phone" && (
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {rw
-                  ? "Iyi link ijya kuri email ihuza konti. Niba wariyandikishije na telefone gusa, koresha Email niba ufite, cyangwa hamagara ubufasha."
-                  : "The link is sent to the email tied to the account. Phone-only accounts cannot receive reset mail — use Email if you have one, or contact support."}
-              </p>
-            )}
-
-            {(mode === "login" || mode === "signup" || mode === "newpassword") && (
+            {(mode === "login" ||
+              mode === "signup" ||
+              mode === "newpassword" ||
+              (mode === "forgot" && tab === "phone")) && (
               <label className="block space-y-1.5 text-sm font-medium">
-                {mode === "newpassword"
+                {mode === "newpassword" || (mode === "forgot" && tab === "phone")
                   ? rw
                     ? "Ijambo ry'ibanga rishya"
                     : "New password"
@@ -346,7 +391,7 @@ export function AuthCard({
               </label>
             )}
 
-            {mode === "newpassword" && (
+            {(mode === "newpassword" || (mode === "forgot" && tab === "phone")) && (
               <label className="block space-y-1.5 text-sm font-medium">
                 {rw ? "Ongera wandike ijambo ry'ibanga" : "Confirm new password"}
                 <Input
@@ -368,7 +413,13 @@ export function AuthCard({
               ) : mode === "forgot" ? (
                 <>
                   <KeyRound className="size-4" />
-                  {rw ? "Kohereza link" : "Send reset link"}
+                  {tab === "email"
+                    ? rw
+                      ? "Kohereza link"
+                      : "Send reset link"
+                    : rw
+                      ? "Bika ijambo rishya"
+                      : "Save new password"}
                 </>
               ) : mode === "newpassword" ? (
                 <>
@@ -389,8 +440,10 @@ export function AuthCard({
                 className="w-full py-2 text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
                 onClick={() => {
                   setSent(false);
+                  setDisplayName("");
+                  setPassword("");
+                  setPassword2("");
                   setMode("forgot");
-                  setTab("email");
                 }}
               >
                 {rw ? "Wibagiwe ijambo ry'ibanga?" : "Forgot your password?"}
@@ -421,6 +474,7 @@ export function AuthCard({
                   setSent(false);
                   setPassword("");
                   setPassword2("");
+                  setDisplayName("");
                   setMode("login");
                 }}
               >
