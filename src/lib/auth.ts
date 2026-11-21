@@ -1,7 +1,7 @@
 /**
  * Ikayi Yange auth
- * Email recovery: code from email → new password
- * Phone recovery: verify name+phone → recover_phone_password RPC (SQL only)
+ * Email recovery: (1) verify 6-digit code (2) set new password
+ * Phone recovery: verify name+phone → recover_phone_password RPC
  */
 import { ensureSupabase, supabaseConfigured } from "@/lib/supabase";
 
@@ -219,16 +219,15 @@ export async function requestPasswordReset(emailOrPhone: string, loginType: Logi
   return { ok: true as const };
 }
 
-export async function completeEmailRecovery(opts: {
+/** Step 1: only check the 6-digit code from email (opens recovery session). */
+export async function verifyEmailRecoveryCode(opts: {
   email: string;
   token: string;
-  newPassword: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const email = opts.email.trim().toLowerCase();
   const token = opts.token.replace(/\s/g, "");
   if (!email.includes("@")) return { ok: false, error: "bad_id" };
   if (token.length < 4) return { ok: false, error: "bad_token" };
-  if (opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "bad_password" };
 
   const client = await ensureSupabase();
   if (!client || !supabaseConfigured) return { ok: false, error: "no_cloud" };
@@ -241,15 +240,25 @@ export async function completeEmailRecovery(opts: {
   if (error) return { ok: false, error: error.message };
   if (!data.session) return { ok: false, error: "bad_token" };
 
-  const { error: upErr } = await client.auth.updateUser({ password: opts.newPassword });
-  if (upErr) return { ok: false, error: upErr.message };
-
   saveAccount({
     loginType: "email",
     identifier: email,
     supabaseUserId: data.session.user.id,
     createdAt: Date.now(),
   });
+  // Session is recovery — not fully logged in until password is set
+  return { ok: true };
+}
+
+/** Step 2: after code matched — set new password and finish login. */
+export async function finishEmailRecoveryPassword(newPassword: string): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  if (newPassword.length < MIN_PASSWORD) return { ok: false, error: "bad_password" };
+  const client = await ensureSupabase();
+  if (!client || !supabaseConfigured) return { ok: false, error: "no_cloud" };
+  const { error } = await client.auth.updateUser({ password: newPassword });
+  if (error) return { ok: false, error: error.message };
   setLoggedIn(true);
   return { ok: true };
 }
@@ -294,7 +303,6 @@ export async function verifyPhoneName(opts: {
   return { ok: false, error: "mismatch" };
 }
 
-/** Strong phone recovery: SQL RPC sets Auth password, then sign-in. */
 export async function recoverPhoneWithName(opts: {
   displayName: string;
   phone: string;
