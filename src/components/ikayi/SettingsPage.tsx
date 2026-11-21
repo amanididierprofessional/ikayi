@@ -101,7 +101,7 @@ export function SettingsPage() {
               ? "Nta murandasi. Amakuru agumana kuri iyi telefone."
               : "Offline. Data stays on this phone until you sync."}
         </p>
-        <div className="mb-3 flex items-center gap-3 text-sm">
+        <label htmlFor="ikayi-auto-sync" className="mb-3 flex cursor-pointer select-none items-center gap-3 text-sm">
           <Checkbox
             id="ikayi-auto-sync"
             checked={autoSync}
@@ -117,10 +117,8 @@ export function SettingsPage() {
               }
             }}
           />
-          <label htmlFor="ikayi-auto-sync" className="cursor-pointer select-none">
-            {t("autoSync")}
-          </label>
-        </div>
+          {t("autoSync")}
+        </label>
         <p className="mb-3 pl-6 text-xs leading-relaxed text-muted-foreground">{t("autoSyncHint")}</p>
         <Button className="h-12 w-full rounded-full" disabled={syncing || !online} onClick={() => void doSync()}>
           {syncing ? (rw ? "Birimo…" : "Syncing…") : t("syncNow")}
