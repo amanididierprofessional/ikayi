@@ -116,6 +116,7 @@ export function SettingsPage() {
           />
           {t("autoSync")}
         </label>
+        <p className="mb-3 pl-6 text-xs leading-relaxed text-muted-foreground">{t("autoSyncHint")}</p>
         <Button className="h-12 w-full rounded-full" disabled={syncing || !online} onClick={() => void doSync()}>
           {syncing ? (rw ? "Birimo…" : "Syncing…") : t("syncNow")}
         </Button>
