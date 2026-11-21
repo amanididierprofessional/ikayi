@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Cloud, CloudOff, LogOut, MessageCircle, Phone, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { clearDevice } from "@/lib/credit-db";
 import { useI18n } from "@/lib/i18n";
@@ -100,22 +101,26 @@ export function SettingsPage() {
               ? "Nta murandasi. Amakuru agumana kuri iyi telefone."
               : "Offline. Data stays on this phone until you sync."}
         </p>
-        <label className="mb-3 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
+        <div className="mb-3 flex items-center gap-3 text-sm">
+          <Checkbox
+            id="ikayi-auto-sync"
             checked={autoSync}
-            onChange={(e) => {
-              const on = e.target.checked;
+            className="h-5 w-5 rounded-full"
+            onCheckedChange={(checked) => {
+              const on = checked === true;
               setAutoSync(on);
               try {
                 localStorage.setItem(AUTO_SYNC_KEY, on ? "auto" : "manual");
               } catch {
-                /* Storage can be unavailable in restricted browser contexts. */
+                setAutoSync(readAutoSync());
+                toast.error(rw ? "Ihitamo ntiryabitswe" : "Could not save this setting");
               }
             }}
           />
-          {t("autoSync")}
-        </label>
+          <label htmlFor="ikayi-auto-sync" className="cursor-pointer select-none">
+            {t("autoSync")}
+          </label>
+        </div>
         <p className="mb-3 pl-6 text-xs leading-relaxed text-muted-foreground">{t("autoSyncHint")}</p>
         <Button className="h-12 w-full rounded-full" disabled={syncing || !online} onClick={() => void doSync()}>
           {syncing ? (rw ? "Birimo…" : "Syncing…") : t("syncNow")}
