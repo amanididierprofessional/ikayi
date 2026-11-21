@@ -1,8 +1,7 @@
 /**
- * Ikayi Yange auth — phone uses synthetic email for one password path.
- * Signup stores one display name (lowercase) for phone recovery.
- * Email recovery = Supabase reset link.
- * Phone recovery = (1) verify name+phone (2) set new password.
+ * Ikayi Yange auth
+ * - Email recovery: send reset → paste 6-digit code → set new password (no Edge Function)
+ * - Phone recovery: verify name+phone (SQL) → set password needs Edge Function OR same-device local
  */
 import { ensureSupabase, supabaseConfigured } from "@/lib/supabase";
 
@@ -220,7 +219,45 @@ export async function requestPasswordReset(emailOrPhone: string, loginType: Logi
   return { ok: true as const };
 }
 
-/** Step 1 only: does this name + phone match a profile? (no password yet) */
+/**
+ * Paste the 6-digit code from the recovery email, then set a new password.
+ * Uses Supabase verifyOtp type recovery — no Edge Function, no CLI.
+ */
+export async function completeEmailRecovery(opts: {
+  email: string;
+  token: string;
+  newPassword: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const email = opts.email.trim().toLowerCase();
+  const token = opts.token.replace(/\s/g, "");
+  if (!email.includes("@")) return { ok: false, error: "bad_id" };
+  if (token.length < 4) return { ok: false, error: "bad_token" };
+  if (opts.newPassword.length < MIN_PASSWORD) return { ok: false, error: "bad_password" };
+
+  const client = await ensureSupabase();
+  if (!client || !supabaseConfigured) return { ok: false, error: "no_cloud" };
+
+  const { data, error } = await client.auth.verifyOtp({
+    email,
+    token,
+    type: "recovery",
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data.session) return { ok: false, error: "bad_token" };
+
+  const { error: upErr } = await client.auth.updateUser({ password: opts.newPassword });
+  if (upErr) return { ok: false, error: upErr.message };
+
+  saveAccount({
+    loginType: "email",
+    identifier: email,
+    supabaseUserId: data.session.user.id,
+    createdAt: Date.now(),
+  });
+  setLoggedIn(true);
+  return { ok: true };
+}
+
 export async function verifyPhoneName(opts: {
   displayName: string;
   phone: string;
@@ -230,7 +267,6 @@ export async function verifyPhoneName(opts: {
   if (!fullName) return { ok: false, error: "bad_name" };
   if (!phone) return { ok: false, error: "bad_id" };
 
-  // Same device local account
   const local = getAccount();
   if (
     local?.loginType === "phone" &&
@@ -252,7 +288,6 @@ export async function verifyPhoneName(opts: {
   });
 
   if (error) {
-    // RPC not deployed yet
     if (/function|schema cache|does not exist/i.test(error.message)) {
       return { ok: false, error: "rpc_missing" };
     }
@@ -263,7 +298,7 @@ export async function verifyPhoneName(opts: {
   return { ok: false, error: "mismatch" };
 }
 
-/** Step 2: after verify passed — set new password via Edge Function (or local-only). */
+/** After phone verify: try Edge Function; if missing, same-device local only. */
 export async function recoverPhoneWithName(opts: {
   displayName: string;
   phone: string;
@@ -281,52 +316,39 @@ export async function recoverPhoneWithName(opts: {
   const local = getAccount();
   const client = await ensureSupabase();
 
-  if (!client || !supabaseConfigured || !navigator.onLine) {
-    if (local?.loginType === "phone" && local.identifier === phone) {
-      saveAccount({ ...local, fullName });
-      setLoggedIn(true);
-      return { ok: true };
+  if (client && supabaseConfigured && navigator.onLine) {
+    try {
+      const { data, error } = await client.functions.invoke("phone-recover", {
+        body: { phone, name: fullName, new_password: opts.newPassword },
+      });
+      if (!error) {
+        const body = data as { ok?: boolean; error?: string } | null;
+        if (body?.ok !== false) {
+          const email = syntheticEmail(phone);
+          await client.auth.signInWithPassword({ email, password: opts.newPassword });
+          saveAccount({
+            loginType: "phone",
+            identifier: phone,
+            fullName,
+            createdAt: Date.now(),
+          });
+          setLoggedIn(true);
+          return { ok: true };
+        }
+      }
+    } catch {
+      /* fall through */
     }
-    return { ok: false, error: "no_cloud" };
   }
 
-  try {
-    const { data, error } = await client.functions.invoke("phone-recover", {
-      body: { phone, name: fullName, new_password: opts.newPassword },
-    });
-    if (error) {
-      if (local?.loginType === "phone" && local.identifier === phone && local.fullName === fullName) {
-        setLoggedIn(true);
-        return { ok: true };
-      }
-      return { ok: false, error: error.message || "recover_failed" };
-    }
-    const body = data as { ok?: boolean; error?: string } | null;
-    if (body && body.ok === false) {
-      return { ok: false, error: body.error || "mismatch" };
-    }
-
-    const email = syntheticEmail(phone);
-    const sign = await client.auth.signInWithPassword({
-      email,
-      password: opts.newPassword,
-    });
-    saveAccount({
-      loginType: "phone",
-      identifier: phone,
-      fullName,
-      supabaseUserId: sign.data.session?.user?.id,
-      createdAt: Date.now(),
-    });
+  // Same device: mark logged in locally (cloud password unchanged without Edge Function)
+  if (local?.loginType === "phone" && local.identifier === phone) {
+    saveAccount({ ...local, fullName });
     setLoggedIn(true);
     return { ok: true };
-  } catch (e) {
-    if (local?.loginType === "phone" && local.identifier === phone && local.fullName === fullName) {
-      setLoggedIn(true);
-      return { ok: true };
-    }
-    return { ok: false, error: e instanceof Error ? e.message : "recover_failed" };
   }
+
+  return { ok: false, error: "need_email_or_function" };
 }
 
 export async function updatePassword(newPassword: string): Promise<
