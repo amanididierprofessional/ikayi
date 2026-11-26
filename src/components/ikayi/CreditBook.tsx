@@ -23,17 +23,17 @@ import {
 import {
   db,
   summarize,
+  readVisibleLedger,
   fmt,
   addPerson,
   addDebt,
   pay,
-  deletePerson,
   type Party,
   type PartyKind,
 } from "@/lib/credit-db";
 import { useI18n, reminderText } from "@/lib/i18n";
 import { DeadlinePicker, isoToDueDays } from "@/components/ikayi/DeadlinePicker";
-import { pushCredit } from "@/lib/sync";
+import { deleteCreditPerson, pushCredit } from "@/lib/sync";
 import { maybeSendUsage, trackAction } from "@/lib/usage";
 
 type FormKind = "person" | "debt" | "payment" | "edit";
@@ -48,14 +48,11 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
   const [removing, setRemoving] = useState<Party | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const parties = useLiveQuery(() => db.parties.where("kind").equals(kind).toArray(), [kind]);
-  const debts = useLiveQuery(() => db.debts.toArray(), []);
-  const payments = useLiveQuery(() => db.payments.toArray(), []);
-
+  const ledger = useLiveQuery(() => readVisibleLedger(kind), [kind]);
   const data = useMemo(() => {
-    if (!parties || !debts || !payments) return undefined;
-    return summarize(parties, debts, payments);
-  }, [parties, debts, payments]);
+    if (!ledger) return undefined;
+    return summarize(ledger.parties, ledger.debts, ledger.payments);
+  }, [ledger]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -216,7 +213,12 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
         <DrawerContent>
           <DrawerHeader>
             <DrawerTitle>{rw ? "Siba umuntu?" : "Delete person?"}</DrawerTitle>
-            <DrawerDescription>{removing?.name} — {rw ? "Amateka yose azasibwa" : "All history will be removed"}</DrawerDescription>
+            <DrawerDescription>
+              {removing?.name} —{" "}
+              {rw
+                ? "Amateka yose azahishwa kuri iyi telefone no kuri murandasi umaze guhuza amakuru."
+                : "All history will be hidden on this device and from your online ledger after sync."}
+            </DrawerDescription>
           </DrawerHeader>
           <div className="flex gap-2 px-4 pb-8">
             <Button variant="outline" className="h-12 flex-1 rounded-full" onClick={() => setRemoving(null)}>{t("cancel")}</Button>
@@ -224,7 +226,10 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
               if (!removing) return;
               setBusy(true);
               try {
-                await deletePerson(removing.id);
+                await deleteCreditPerson(removing.id);
+                if (localStorage.getItem("ikayi-sync-mode") === "auto" && navigator.onLine) {
+                  void pushCredit().catch(() => {});
+                }
                 try { await trackAction("person_deleted"); await maybeSendUsage(); } catch { /* */ }
                 toast.success(rw ? "Byasibwe" : "Deleted"); setRemoving(null);
               }

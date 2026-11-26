@@ -9,10 +9,13 @@ class CreditDB extends Dexie {
   payments: Table<Entry, number>;
   settings: Table<{key:string;value:string}, string>;
   usage: Table<UsageRow, [string, string]>;
+  deletedParties: Table<{ id: number; owner?: string }, number>;
   constructor() {
     super('ikayi-credit');
     this.version(1).stores({parties:'id,kind,name',debts:'id,partyId,createdAt',payments:'id,partyId,createdAt',settings:'key'});
     this.version(2).stores({parties:'id,kind,name',debts:'id,partyId,createdAt',payments:'id,partyId,createdAt',settings:'key',usage:'[date+path],date'});
+    this.version(3).stores({ deletedParties: 'id,owner' });
+    this.deletedParties = this.table('deletedParties');
     this.parties=this.table('parties'); this.debts=this.table('debts'); this.payments=this.table('payments'); this.settings=this.table('settings'); this.usage=this.table('usage');
   }
 }
@@ -42,5 +45,28 @@ export async function addPerson(name:string,phone:string,kind:PartyKind,amount:n
 }
 export async function addDebt(partyId:number,amount:number,description:string,dueDays?:number) {positive(amount);await db.debts.add({id:id(),partyId,amount,description,createdAt:Date.now(),...(dueDays?{dueDays}:{})});}
 export async function pay(partyId:number,amount:number,date:string) {positive(amount);await db.payments.add({id:id(),partyId,amount,createdAt:new Date(date+'T12:00:00').getTime()});}
-export async function deletePerson(partyId:number) {await db.transaction('rw',db.parties,db.debts,db.payments,async()=>{await db.debts.where('partyId').equals(partyId).delete();await db.payments.where('partyId').equals(partyId).delete();await db.parties.delete(partyId);});}
+export async function deletePerson(partyId: number, owner?: string) {
+  await db.transaction('rw', db.deletedParties, async () => {
+    if (await db.deletedParties.get(partyId)) return;
+    await db.deletedParties.add({ id: partyId, ...(owner ? { owner } : {}) });
+  });
+}
+
+export function readVisibleLedger(kind?: PartyKind) {
+  return db.transaction('r', db.parties, db.debts, db.payments, db.deletedParties, async () => {
+    const [parties, debts, payments, deleted] = await Promise.all([
+      kind ? db.parties.where('kind').equals(kind).toArray() : db.parties.toArray(),
+      db.debts.toArray(),
+      db.payments.toArray(),
+      db.deletedParties.toCollection().primaryKeys(),
+    ]);
+    const hidden = new Set(deleted);
+    return {
+      parties: parties.filter(row => !hidden.has(row.id)),
+      debts: debts.filter(row => !hidden.has(row.partyId)),
+      payments: payments.filter(row => !hidden.has(row.partyId)),
+    };
+  });
+}
+
 export async function clearDevice() {await db.transaction('rw',db.parties,db.debts,db.payments,async()=>{await db.parties.clear();await db.debts.clear();await db.payments.clear();});}
