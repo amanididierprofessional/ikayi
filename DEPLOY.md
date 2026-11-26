@@ -28,13 +28,21 @@ Primary download (website + Actions release):
 
 Welcome page (`/welcome`) uses that URL for **Shyiramo app**.
 
+### Protect existing Android ledgers
+
+Keep the package name, signing certificate and Capacitor storage origin compatible for an in-place update. Test an APK using the production app ID and a compatible signing key on a phone seeded with sample local-only customers, suppliers, debts and payments. Compare the records before and after the update with the phone offline.
+
+Builds from main produce artifacts. Updating the public download requires a manual workflow run with publish_apk enabled and an APK whose certificate matches IKAYI_EXPECTED_APK_CERT_SHA256, the verified fingerprint of the installed APK for the users you intend to update. A GitHub-hosted debug build may have a new key on each run. Do not change the expected fingerprint to match an unrelated new key.
+
+If an installed APK has a different certificate and its signing key cannot be recovered, keep it installed. Verify a backup and restore path for each affected ledger before recommending any uninstall. A separate test app cannot read the production app’s on-device records.
+
 ### Capacitor / system splash (saved playbook)
 
 If the APK shows a **Capacitor** logo for a second on cold start, see:
 
 **→ [`docs/ANDROID_LAUNCH_FIX.md`](docs/ANDROID_LAUNCH_FIX.md)**
 
-Summary: after `cap sync` + Ikayi icons, run `npm run android:fix-startup` (already in CI on `main`), rebuild APK, **uninstall** old app, install new one.
+Summary: after `cap sync` + Ikayi icons, run `npm run android:fix-startup` (already in CI on `main`), rebuild APK, and verify an in-place update before testing a phone with saved records.
 
 ## Usage analytics (owner only)
 
