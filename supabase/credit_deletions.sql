@@ -17,20 +17,33 @@ drop policy if exists own_deletions_insert on public.credit_party_deletions;
 create policy own_deletions_insert on public.credit_party_deletions for insert
   to authenticated with check ((select auth.uid()) = user_id);
 
-create index if not exists debts_user_party_idx on public.debts (user_id, party_local_id);
-create index if not exists payments_user_party_idx on public.payments (user_id, party_local_id);
+-- Restrictive policies run alongside the existing account-owner policies.
+drop policy if exists hide_deleted_parties on public.parties;
+create policy hide_deleted_parties on public.parties as restrictive for select
+  to authenticated using (not exists (
+    select 1 from public.credit_party_deletions d
+    where d.user_id = parties.user_id and d.local_id = parties.local_id
+  ));
 
-create or replace function public.apply_ikayi_credit_deletion()
-returns trigger language plpgsql security definer set search_path = ''
-as $$
-begin
-  perform pg_advisory_xact_lock(hashtext(new.user_id::text), hashtext(new.local_id::text));
-  delete from public.debts where user_id = new.user_id and party_local_id = new.local_id;
-  delete from public.payments where user_id = new.user_id and party_local_id = new.local_id;
-  delete from public.parties where user_id = new.user_id and local_id = new.local_id;
-  return null;
-end;
-$$;
+drop policy if exists hide_deleted_debts on public.debts;
+create policy hide_deleted_debts on public.debts as restrictive for select
+  to authenticated using (not exists (
+    select 1 from public.credit_party_deletions d
+    where d.user_id = debts.user_id and d.local_id = debts.party_local_id
+  ));
+
+drop policy if exists hide_deleted_payments on public.payments;
+create policy hide_deleted_payments on public.payments as restrictive for select
+  to authenticated using (not exists (
+    select 1 from public.credit_party_deletions d
+    where d.user_id = payments.user_id and d.local_id = payments.party_local_id
+  ));
+
+revoke delete on public.parties, public.debts, public.payments from public, anon, authenticated;
+
+-- Retire the physical-delete trigger if an earlier draft was installed.
+drop trigger if exists apply_ikayi_credit_deletion on public.credit_party_deletions;
+drop function if exists public.apply_ikayi_credit_deletion();
 
 create or replace function public.ignore_deleted_ikayi_credit()
 returns trigger language plpgsql security definer set search_path = ''
@@ -46,7 +59,6 @@ begin
   else
     party_id := new.party_local_id;
   end if;
-  perform pg_advisory_xact_lock(hashtext(new.user_id::text), hashtext(party_id::text));
   if exists (
     select 1 from public.credit_party_deletions d
     where d.user_id = new.user_id and d.local_id = party_id
@@ -57,12 +69,7 @@ begin
 end;
 $$;
 
-revoke all on function public.apply_ikayi_credit_deletion() from public;
 revoke all on function public.ignore_deleted_ikayi_credit() from public;
-
-drop trigger if exists apply_ikayi_credit_deletion on public.credit_party_deletions;
-create trigger apply_ikayi_credit_deletion after insert on public.credit_party_deletions
-for each row execute function public.apply_ikayi_credit_deletion();
 
 drop trigger if exists ignore_deleted_ikayi_credit on public.parties;
 create trigger ignore_deleted_ikayi_credit before insert or update on public.parties

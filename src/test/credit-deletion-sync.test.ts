@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import Dexie from "dexie";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { db, deletePerson } from "@/lib/credit-db";
+import { db, deletePerson, readVisibleLedger } from "@/lib/credit-db";
 import { deleteCreditPerson, fullSync } from "@/lib/sync";
 
 type Row = { local_id: number; user_id: string; [key: string]: unknown };
@@ -96,8 +96,8 @@ describe("credit deletion sync", () => {
     expect(await db.deletedParties.count()).toBe(0);
     await deletePerson(1, "owner");
     expect(await db.deletedParties.get(1)).toEqual({ id: 1, owner: "owner" });
-    expect(await db.debts.count()).toBe(0);
-    expect(await db.payments.count()).toBe(0);
+    expect(await db.debts.toArray()).toEqual([debt]);
+    expect(await db.payments.toArray()).toEqual([payment]);
   });
 
   it("keeps an offline deletion through restart and repeated syncs", async () => {
@@ -108,7 +108,8 @@ describe("credit deletion sync", () => {
     await db.debts.add(debt);
     await db.payments.add(payment);
     await deleteCreditPerson(party.id);
-    expect(await db.parties.get(party.id)).toBeUndefined();
+    expect(await db.parties.get(party.id)).toEqual(party);
+    expect(await readVisibleLedger()).toEqual({ parties: [], debts: [], payments: [] });
     db.close();
     await db.open();
     expect(await db.deletedParties.get(party.id)).toEqual({ id: party.id, owner: "owner" });
@@ -134,8 +135,22 @@ describe("credit deletion sync", () => {
     expect(cloud.rows.get("credit_party_deletions")).toEqual([{ user_id, local_id: 1 }]);
     expect(await fullSync()).toEqual({ ok: true });
     expect(cloud.uploads.filter((table) => table === "credit_party_deletions")).toHaveLength(1);
-    expect(await db.parties.toCollection().primaryKeys()).toEqual([7, 8]);
-    expect(await db.debts.count()).toBe(0);
-    expect(await db.payments.count()).toBe(0);
+    expect((await readVisibleLedger()).parties.map((row) => row.id)).toEqual([7, 8]);
+    expect(await db.parties.toCollection().primaryKeys()).toEqual([1, 7, 8]);
+    expect(await db.debts.toArray()).toEqual([debt]);
+    expect(await db.payments.toArray()).toEqual([payment]);
+  });
+  it("hides a deletion received from another device while retaining the local data", async () => {
+    await db.open();
+    await db.parties.add(party);
+    await db.debts.add(debt);
+    await db.payments.add(payment);
+    cloud.rows.set("credit_party_deletions", [{ user_id: "owner", local_id: party.id }]);
+    expect(await fullSync()).toEqual({ ok: true });
+    expect(await readVisibleLedger()).toEqual({ parties: [], debts: [], payments: [] });
+    expect(await db.parties.get(party.id)).toEqual(party);
+    expect(await db.debts.get(debt.id)).toEqual(debt);
+    expect(await db.payments.get(payment.id)).toEqual(payment);
+    expect(cloud.uploads).toEqual([]);
   });
 });

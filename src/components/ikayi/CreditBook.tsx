@@ -23,6 +23,7 @@ import {
 import {
   db,
   summarize,
+  readVisibleLedger,
   fmt,
   addPerson,
   addDebt,
@@ -47,14 +48,11 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
   const [removing, setRemoving] = useState<Party | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const parties = useLiveQuery(() => db.parties.where("kind").equals(kind).toArray(), [kind]);
-  const debts = useLiveQuery(() => db.debts.toArray(), []);
-  const payments = useLiveQuery(() => db.payments.toArray(), []);
-
+  const ledger = useLiveQuery(() => readVisibleLedger(kind), [kind]);
   const data = useMemo(() => {
-    if (!parties || !debts || !payments) return undefined;
-    return summarize(parties, debts, payments);
-  }, [parties, debts, payments]);
+    if (!ledger) return undefined;
+    return summarize(ledger.parties, ledger.debts, ledger.payments);
+  }, [ledger]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -218,8 +216,8 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
             <DrawerDescription>
               {removing?.name} —{" "}
               {rw
-                ? "Amateka yose azasibwa. Niba yarabitswe kuri murandasi, azasibwa na ho igihe uzahuza amakuru."
-                : "All history will be deleted. If there’s an online copy, it will be deleted when you sync."}
+                ? "Amateka yose azahishwa kuri iyi telefone no kuri murandasi umaze guhuza amakuru."
+                : "All history will be hidden on this device and from your online ledger after sync."}
             </DrawerDescription>
           </DrawerHeader>
           <div className="flex gap-2 px-4 pb-8">

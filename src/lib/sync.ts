@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAccount } from "@/lib/auth";
-import { db, deletePerson, type Entry, type Party } from "@/lib/credit-db";
+import { db, deletePerson, readVisibleLedger, type Entry, type Party } from "@/lib/credit-db";
 import { ensureSupabase, supabaseConfigured } from "@/lib/supabase";
 
 export type SyncResult = { ok: true } | { ok: false; reason: string };
@@ -73,40 +73,32 @@ async function upload(client: SupabaseClient, table: CreditTable, rows: object[]
   }
 }
 
-async function applyDeletions(owner: string, ids: number[]) {
+async function rememberDeletions(owner: string, ids: number[]) {
   if (!ids.length) return;
-  await db.transaction("rw", db.parties, db.debts, db.payments, db.deletedParties, async () => {
+  await db.transaction("rw", db.deletedParties, async () => {
     // Keep local markers intact, including device-only deletions.
     const existing = await db.deletedParties.bulkGet(ids);
     await db.deletedParties.bulkAdd(
       ids.filter((_, index) => !existing[index]).map((id) => ({ id, owner })),
     );
-    await db.debts.where("partyId").anyOf(ids).delete();
-    await db.payments.where("partyId").anyOf(ids).delete();
-    await db.parties.bulkDelete(ids);
   });
 }
 
 async function pushAccount(client: SupabaseClient, owner: string) {
   const deleted = await readRows(client, "credit_party_deletions", owner);
-  await applyDeletions(
+  await rememberDeletions(
     owner,
     deleted.map((row) => row.local_id),
   );
   const knownDeleted = new Set(deleted.map((row) => row.local_id));
-  const [parties, debts, payments, pending] = await db.transaction(
+  const [{ parties, debts, payments }, pending] = await db.transaction(
     "r",
     db.parties,
     db.debts,
     db.payments,
     db.deletedParties,
     () =>
-      Promise.all([
-        db.parties.toArray(),
-        db.debts.toArray(),
-        db.payments.toArray(),
-        db.deletedParties.where("owner").equals(owner).toArray(),
-      ]),
+      Promise.all([readVisibleLedger(), db.deletedParties.where("owner").equals(owner).toArray()]),
   );
   await upload(
     client,
@@ -164,7 +156,7 @@ async function pullAccount(client: SupabaseClient, owner: string) {
     readRows<CloudEntry>(client, "payments", owner),
   ]);
   const deleted = await readRows(client, "credit_party_deletions", owner);
-  await applyDeletions(
+  await rememberDeletions(
     owner,
     deleted.map((row) => row.local_id),
   );
@@ -239,11 +231,12 @@ export async function checkRemoteAhead(): Promise<{ ahead: boolean }> {
   const uid = await sessionUserId(client);
   if (!uid) return { ahead: false };
 
+  const { parties, debts, payments } = await readVisibleLedger();
   const localMax = Math.max(
     0,
-    ...(await db.debts.toArray()).map((d) => d.createdAt),
-    ...(await db.payments.toArray()).map((p) => p.createdAt),
-    ...(await db.parties.toArray()).map((p) => p.createdAt),
+    ...debts.map((d) => d.createdAt),
+    ...payments.map((p) => p.createdAt),
+    ...parties.map((p) => p.createdAt),
   );
 
   const { data } = await client
