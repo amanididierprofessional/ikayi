@@ -33,14 +33,14 @@ import {
 } from "@/lib/credit-db";
 import { useI18n, reminderText } from "@/lib/i18n";
 import { DeadlinePicker, isoToDueDays } from "@/components/ikayi/DeadlinePicker";
-import { saveCreditAction, useLedgerSession } from "@/lib/guest-ledger";
+import { GuestLimitError, saveCreditAction, useLedgerSession } from "@/lib/guest-ledger";
 import { pushCredit } from "@/lib/sync";
 import { maybeSendUsage, trackAction } from "@/lib/usage";
 
 type FormKind = "person" | "debt" | "payment" | "edit";
 
 export function CreditBook({ kind }: { kind: PartyKind }) {
-  const authenticated = useLedgerSession();
+  const { authenticated, requestChange } = useLedgerSession();
   const { t, lang } = useI18n();
   const rw = lang === "rw";
   const [query, setQuery] = useState("");
@@ -111,7 +111,7 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
           </p>
           <p className="mt-1 text-2xl font-bold tabular-nums">{fmt(total)}</p>
         </div>
-        <Button data-guide-target="add-person" className="h-10 shrink-0 rounded-full px-3 text-xs" onClick={() => setForm({ type: "person" })}>
+        <Button data-guide-target="add-person" className="h-10 shrink-0 rounded-full px-3 text-xs" onClick={() => { if (requestChange()) setForm({ type: "person" }); }}>
           <Plus className="size-4" />
           {t("addParty")}
         </Button>
@@ -185,11 +185,11 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
                         {history ? (rw ? "Hisha amateka" : "Hide history") : (rw ? "Reba amateka yose" : "Show full history")}
                       </Button>
                     )}
-                    <Button type="button" variant="ghost" className="h-9" onClick={() => setForm({ type: "edit", party: r.p })}>{t("edit")}</Button>
+                    <Button type="button" variant="ghost" className="h-9" onClick={() => { if (requestChange()) setForm({ type: "edit", party: r.p }); }}>{t("edit")}</Button>
                     <div className="flex gap-2">
-                      <Button className="h-11 min-w-0 flex-1 rounded-full px-2 text-xs" onClick={() => setForm({ type: "payment", party: r.p, balance: r.balance })}>{t("recordPayment")}</Button>
-                      <Button variant="outline" className="h-11 min-w-0 flex-1 rounded-full px-2 text-xs" onClick={() => setForm({ type: "debt", party: r.p })}>{t("addDebtLbl")}</Button>
-                      <Button variant="ghost" size="icon" className="h-11 shrink-0 rounded-full text-destructive" title={rw ? "Siba umuntu" : "Delete person"} aria-label={rw ? "Siba umuntu" : "Delete person"} onClick={() => setRemoving(r.p)}><Trash2 /></Button>
+                      <Button className="h-11 min-w-0 flex-1 rounded-full px-2 text-xs" onClick={() => { if (requestChange()) setForm({ type: "payment", party: r.p, balance: r.balance }); }}>{t("recordPayment")}</Button>
+                      <Button variant="outline" className="h-11 min-w-0 flex-1 rounded-full px-2 text-xs" onClick={() => { if (requestChange()) setForm({ type: "debt", party: r.p }); }}>{t("addDebtLbl")}</Button>
+                      <Button variant="ghost" size="icon" className="h-11 shrink-0 rounded-full text-destructive" title={rw ? "Siba umuntu" : "Delete person"} aria-label={rw ? "Siba umuntu" : "Delete person"} onClick={() => { if (requestChange()) setRemoving(r.p); }}><Trash2 /></Button>
                     </div>
                     {kind === "customer" && r.p.phone && (
                       <div className="flex gap-2">
@@ -230,6 +230,10 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
                 try { await trackAction("person_deleted"); await maybeSendUsage(); } catch { /* */ }
                 toast.success(rw ? "Byasibwe" : "Deleted"); setRemoving(null);
               }
+              catch (error) {
+                if (error instanceof GuestLimitError) requestChange(true);
+                else toast.error(rw ? "Gusiba byanze." : "Could not delete the record.");
+              }
               finally { setBusy(false); }
             }}>{rw ? "Siba" : "Delete"}</Button>
           </div>
@@ -240,7 +244,7 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
 }
 
 function CreditForm({ type, party, balance, kind, onDone }: { type: FormKind; party?: Party; balance: number; kind: PartyKind; onDone: () => void }) {
-  const authenticated = useLedgerSession();
+  const { authenticated, requestChange } = useLedgerSession();
   const { t, lang } = useI18n();
   const rw = lang === "rw";
   const [name, setName] = useState(party?.name ?? "");
@@ -283,7 +287,8 @@ function CreditForm({ type, party, balance, kind, onDone }: { type: FormKind; pa
       toast.success(t("save"));
       onDone();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      if (err instanceof GuestLimitError) requestChange(true);
+      else toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
