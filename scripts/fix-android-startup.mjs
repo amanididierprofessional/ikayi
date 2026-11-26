@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Patch only the launch theme: never touch launcher/adaptive icon resources.
-// Source: lovable-sync (do not replace with Cap default splash icon).
+// Keep the native surface orange until the WebView can animate the branding.
 export function fixAndroidStartup(root = process.cwd()) {
   const main = path.join(root, 'android/app/src/main');
   const manifestPath = path.join(main, 'AndroidManifest.xml');
@@ -19,6 +18,8 @@ export function fixAndroidStartup(root = process.cwd()) {
   const escaped = theme.replaceAll('.', '\\.');
   const stylePattern = new RegExp(`<style\\b(?=[^>]*\\bname="${escaped}")[^>]*>[\\s\\S]*?<\\/style>`);
   const original = base.match(stylePattern)?.[0];
+  const postTheme = original?.match(/<item\s+name="postSplashScreenTheme">@style\/([\w.]+)<\/item>/)?.[1];
+  const postPattern = postTheme && new RegExp('<style\\b(?=[^>]*\\bname="' + postTheme.replaceAll('.', '\\.') + '")[^>]*>[\\s\\S]*?<\\/style>');
   if (!original) throw new Error(`Launch theme ${theme} not found in values/styles.xml; no resources changed.`);
   const icon = '@drawable/ikayi_startup_icon';
   const background = '@color/ikayi_startup_background';
@@ -28,6 +29,8 @@ export function fixAndroidStartup(root = process.cwd()) {
       'android:windowIsTranslucent': 'false',
     };
     if (/Theme\.SplashScreen/.test(style) || /name="windowSplashScreen/.test(style)) {
+      items['android:statusBarColor'] = background;
+      items['android:navigationBarColor'] = background;
       items.windowSplashScreenBackground = background;
       items.windowSplashScreenAnimatedIcon = icon;
       items.windowSplashScreenAnimationDuration = '0';
@@ -50,18 +53,21 @@ export function fixAndroidStartup(root = process.cwd()) {
     for (const file of fs.readdirSync(path.join(res, folder)).filter((name) => name.endsWith('.xml'))) {
       const target = path.join(res, folder, file);
       const text = fs.readFileSync(target, 'utf8');
-      if (stylePattern.test(text)) changes.push([target, text.replace(stylePattern, (style) => patchStyle(style, /-v(?:3[1-9]|[4-9]\d)/.test(folder)))]);
+      let updated = text.replace(stylePattern, (style) => patchStyle(style, /-v(?:3[1-9]|[4-9]\d)/.test(folder)));
+      if (postPattern) updated = updated.replace(postPattern, (style) => patchStyle(style));
+      if (updated !== text) changes.push([target, updated]);
     }
   }
   const v31Path = path.join(res, 'values-v31/styles.xml');
   const v31 = fs.existsSync(v31Path) ? fs.readFileSync(v31Path, 'utf8') : '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n';
   if (!stylePattern.test(v31)) changes.push([v31Path, v31.replace('</resources>', `${patchStyle(original, true)}\n</resources>`)]);
-  changes.push([path.join(res, 'values/ikayi_startup.xml'), '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ikayi_startup_background">#FAF8F5</color></resources>\n']);
-  const iconSource = path.join(root, 'assets/icon-foreground.png');
+  changes.push([path.join(res, 'values/ikayi_startup.xml'), '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ikayi_startup_background">#D75A1B</color></resources>\n']);
   const iconTarget = path.join(res, 'drawable-nodpi/ikayi_startup_icon.png');
-  if (!fs.existsSync(iconSource)) throw new Error('Missing branded Android splash icon: assets/icon-foreground.png');
   fs.mkdirSync(path.dirname(iconTarget), { recursive: true });
-  fs.copyFileSync(iconSource, iconTarget);
+  // Android 12+ requires an icon slot. A transparent pixel lets the app logo animate into view.
+  fs.writeFileSync(iconTarget, Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=', 'base64',
+  ));
   for (const [target, content] of changes) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content);

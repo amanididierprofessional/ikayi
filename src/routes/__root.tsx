@@ -93,7 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", href: "/favicon.png", type: "image/png" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400..800&display=swap",
       },
     ],
   }),
@@ -110,7 +110,7 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
         <style
           dangerouslySetInnerHTML={{
-            __html: `html,body{margin:0;min-height:100%;background:#FAF8F5}`,
+            __html: `html,body{margin:0;min-height:100%;background:${import.meta.env["VITE_NATIVE"] === "1" ? "#D75A1B" : "#FAF8F5"}}`,
           }}
         />
       </head>
