@@ -58,8 +58,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const tabIndex = ledgerRoutes.indexOf(path);
   const previousTab = useRef(tabIndex);
   const slideDirection = useMemo(() => {
-    if (tabIndex !== previousTab.current)
-      return tabIndex > previousTab.current ? "forward" : "backward";
+    if (tabIndex === previousTab.current) return undefined;
+    return tabIndex > previousTab.current ? "forward" : "backward";
   }, [tabIndex]);
   useEffect(() => {
     previousTab.current = tabIndex;

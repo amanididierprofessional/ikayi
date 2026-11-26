@@ -7,7 +7,7 @@ const PROMPT_KEY = "ikayi-guest-signin-requested";
 export class GuestLimitError extends Error {}
 export const LedgerSession = createContext({
   authenticated: false,
-  requestChange: (_force?: boolean) => true,
+  requestChange: (_force?: boolean): boolean => true,
 });
 
 export function guestSignInRequested() {
