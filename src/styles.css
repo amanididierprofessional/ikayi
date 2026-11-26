@@ -234,90 +234,87 @@
   font-size: 0.8rem;
   color: var(--muted-foreground);
 }
-.ikayi-startup-track {
-  margin-top: 12px;
-  width: 100%;
-  height: 4px;
-  border-radius: 9999px;
-  overflow: hidden;
-  background: color-mix(in oklab, var(--primary) 13%, transparent);
-}
-.ikayi-startup-track span {
-  display: block;
-  height: 100%;
-  width: 40%;
-  border-radius: inherit;
-  background: var(--primary);
-}
-.ikayi-startup-track span.is-loading {
-  animation: ikayi-progress 1.15s linear infinite;
-}
-.ikayi-startup-track span.is-ready {
-  width: 100%;
-}
-.ikayi-startup-status {
-  margin: 8px 0 0;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-@keyframes ikayi-progress {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(280%);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ikayi-startup-track span.is-loading {
-    animation: none;
-    transform: translateX(75%);
-  }
+.ikayi-startup:not([data-animate]) .ikayi-startup-content {
+  visibility: hidden;
 }
 
 .ikayi-startup {
-  background: linear-gradient(155deg, #ee862f, #c84e14);
+  background: #d75a1b;
   color: #fff;
+}
+
+body:has(.app-shell),
+body:has(.auth-overlay) {
+  min-height: 100dvh;
+  background: var(--background);
 }
 
 .ikayi-startup-logo {
   width: 88px;
   height: 88px;
   box-shadow: 0 14px 38px rgb(83 34 10 / 24%);
-  animation: ikayi-logo-arrive 650ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.ikayi-startup[data-animate] .ikayi-startup-logo {
+  animation: ikayi-logo-arrive 900ms cubic-bezier(.2, .85, .26, 1) both;
 }
 
 .ikayi-startup-title {
   color: #fff;
   font-size: clamp(1.85rem, 7vw, 2.5rem);
-  animation: ikayi-copy-arrive 460ms 140ms ease-out both;
+}
+
+.ikayi-startup[data-animate] .ikayi-startup-title {
+  animation: ikayi-title-arrive 560ms 830ms ease-out both;
 }
 
 .ikayi-startup-description {
   color: #fff;
   font-size: .95rem;
-  animation: ikayi-copy-arrive 460ms 260ms ease-out both;
+}
+
+.ikayi-startup[data-animate] .ikayi-startup-description {
+  animation: ikayi-copy-arrive 430ms 1130ms ease-out both;
 }
 
 @keyframes ikayi-logo-arrive {
-  from { opacity: 0; transform: translateY(24px) scale(.8) rotate(-8deg); }
-  to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+  0% { opacity: 0; transform: translateY(-34dvh) scale(.83); }
+  23% { opacity: 1; }
+  78% { transform: translateY(5px) scale(1.025); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes ikayi-title-arrive {
+  from { opacity: 0; font-weight: 400; transform: translateY(7px); }
+  to { opacity: 1; font-weight: 800; transform: translateY(0); }
 }
 
 @keyframes ikayi-copy-arrive {
-  from { opacity: 0; transform: translateY(9px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.ikayi-guide-target,
-[data-guide-add] [data-guide-target="add-person"] {
-  outline: 2px dashed var(--primary);
-  outline-offset: 3px;
+.ikayi-tour-scrim {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ikayi-tour-scrim:not(:has(.ikayi-tour-spotlight)) {
+  background: rgb(31 20 14 / 65%);
+}
+
+.ikayi-tour-spotlight {
+  position: absolute;
+  border-radius: 999px;
+  border: 2px dashed #ffb47c;
+  box-shadow: 0 0 0 150vmax rgb(31 20 14 / 65%);
 }
 
 .ikayi-guide-panel {
   position: fixed;
-  z-index: 40;
+  z-index: 46;
   left: 50%;
   bottom: calc(env(safe-area-inset-bottom, 0px) + 104px);
   width: min(340px, calc(100% - 32px));
@@ -326,11 +323,17 @@
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 8px 28px rgb(45 28 16 / 18%);
+  box-shadow: 0 12px 38px rgb(28 17 11 / 28%);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ikayi-startup-logo,
-  .ikayi-startup-title,
-  .ikayi-startup-description { animation: none; }
+  .ikayi-startup[data-animate] .ikayi-startup-logo,
+  .ikayi-startup[data-animate] .ikayi-startup-title,
+  .ikayi-startup[data-animate] .ikayi-startup-description {
+    animation: none;
+  }
+
+  .ikayi-startup-title {
+    font-weight: 800;
+  }
 }

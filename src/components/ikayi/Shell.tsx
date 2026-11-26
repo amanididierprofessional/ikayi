@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { BookUser, Cloud, HandCoins, Settings2, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import logo from "@/assets/ikayi-logo.png";
 
 let introComplete = false;
 const GUIDE_DONE = "ikayi-guide-seen";
+type Spotlight = { left: number; top: number; width: number; height: number };
 const GUIDE_STEP = "ikayi-guide-step";
 async function hasAccountSession() {
   const client = await ensureSupabase();
@@ -38,7 +39,11 @@ export function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const count = useLiveQuery(readGuestActions, []);
   const [intro, setIntro] = useState(!introComplete);
+  const [motionReady, setMotionReady] = useState(false);
   const [step, setStep] = useState<number | null>(null);
+  const [spotlight, setSpotlight] = useState<Spotlight | null>(null);
+  const guidePanel = useRef<HTMLElement>(null);
+  const activeGuide = step === null ? undefined : tour[step];
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
   const [syncSetupOpen, setSyncSetupOpen] = useState(false);
@@ -54,10 +59,11 @@ export function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!intro) return;
+    setMotionReady(true);
     const timer = window.setTimeout(() => {
       introComplete = true;
       setIntro(false);
-    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1250);
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1900);
     return () => window.clearTimeout(timer);
   }, [intro]);
 
@@ -75,6 +81,31 @@ export function Shell({ children }: { children: ReactNode }) {
     })().catch(() => {}).finally(() => { if (!cancelled) setChecking(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (intro || checking || count === undefined || count >= GUEST_LIMIT && !authed || !activeGuide || path !== activeGuide.target) {
+      setSpotlight(null);
+      return;
+    }
+    const selector = step === 3 ? '[data-guide-target="add-person"]' : ".ikayi-guide-target";
+    const target = document.querySelector(selector);
+    if (!target) return;
+    const measure = () => {
+      const { left, top, width, height } = target.getBoundingClientRect();
+      setSpotlight({ left: left - 4, top: top - 4, width: width + 8, height: height + 8 });
+    };
+    measure();
+    guidePanel.current?.focus({ preventScroll: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(target);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [activeGuide, authed, checking, count, intro, path, step]);
 
   const onAuthed = useCallback(async (isNewAccount = false) => {
     if (!await hasAccountSession()) {
@@ -123,9 +154,9 @@ export function Shell({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  if (checking || intro || count === undefined) {
+  if (intro || (motionReady && (checking || count === undefined))) {
     return (
-      <div className="ikayi-startup">
+      <div className="ikayi-startup" data-animate={motionReady || undefined}>
         <div className="ikayi-startup-content">
           <img src={logo} alt="" className="ikayi-startup-logo" />
           <h1 className="ikayi-startup-title">Ikayi Yange</h1>
@@ -135,13 +166,15 @@ export function Shell({ children }: { children: ReactNode }) {
     );
   }
 
+  if (checking || count === undefined) return <div className="min-h-dvh bg-background" />;
+
   if (!authed && (count >= GUEST_LIMIT || isRecoveryUrl())) {
     return <AuthCard onAuthed={onAuthed} guestLimit={count >= GUEST_LIMIT} />;
   }
 
-  const activeGuide = step === null ? undefined : tour[step];
   return (
-    <div className="app-shell" data-guide-add={step === 3 || undefined}>
+    <div className="app-shell">
+      <div inert={Boolean(activeGuide)}>
       <header className="app-header">
         <div className="flex min-w-0 items-center gap-3">
           <img src={logo} alt="" className="size-11 shrink-0 rounded-xl" />
@@ -216,16 +249,22 @@ export function Shell({ children }: { children: ReactNode }) {
           );
         })}
       </nav>
+      </div>
 
       {activeGuide && (
-        <aside className="ikayi-guide-panel" aria-label="Uko ukoresha Ikayi" aria-live="polite">
+        <>
+          <div className="ikayi-tour-scrim" aria-hidden="true">
+            {spotlight && <div className="ikayi-tour-spotlight" style={spotlight} />}
+          </div>
+          <aside ref={guidePanel} tabIndex={-1} className="ikayi-guide-panel" role="dialog" aria-modal="true" aria-label="Uko ukoresha Ikayi">
           <h2 className="font-semibold">{activeGuide.title}</h2>
           <p className="mt-1 text-sm">{activeGuide.text}</p>
           <div className="mt-3 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={finishGuide}>Simbuka</Button>
             <Button type="button" onClick={advanceGuide}>{step === 3 ? "Tangira" : "Komeza"}</Button>
           </div>
-        </aside>
+          </aside>
+        </>
       )}
 
       <Drawer
