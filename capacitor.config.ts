@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.ikayiyange.onboardingtestv2",
-  appName: "Ikayi Test 2",
+  appId: "com.ikayiyange.onboardingtestv3",
+  appName: "Ikayi Test 3",
   webDir: ".output/public",
   backgroundColor: "#D75A1B",
   plugins: {
