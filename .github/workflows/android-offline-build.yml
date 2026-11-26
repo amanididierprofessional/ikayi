@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      publish_apk:
+        description: Replace the public APK after a data-preserving device upgrade test
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -216,10 +221,23 @@ jobs:
           retention-days: 14
 
       - name: Publish direct APK download for the website
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_apk
         env:
+          EXPECTED_SIGNER: ${{ vars.IKAYI_EXPECTED_APK_CERT_SHA256 }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_SIGNER" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo 'Set IKAYI_EXPECTED_APK_CERT_SHA256 to the verified installed certificate fingerprint before publishing.' >&2
+            exit 1
+          fi
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          signer=$("$apksigner" verify --print-certs "$apk" | awk '/^Signer #1 certificate SHA-256 digest:/ {print $NF}')
+          if [[ "${signer,,}" != "${EXPECTED_SIGNER,,}" ]]; then
+            echo 'APK certificate differs from the approved installed certificate; the public APK stays in place.' >&2
+            exit 1
+          fi
           gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --title "Ikayi Yange Android" --notes "Direct Android APK download for Ikayi Yange. Beta build." --prerelease
           cp android/app/build/outputs/apk/debug/app-debug.apk ikayi-yange.apk
           gh release upload android-latest ikayi-yange.apk --clobber

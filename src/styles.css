@@ -234,43 +234,150 @@
   font-size: 0.8rem;
   color: var(--muted-foreground);
 }
-.ikayi-startup-track {
-  margin-top: 12px;
-  width: 100%;
-  height: 4px;
-  border-radius: 9999px;
+.ikayi-startup:not([data-animate]) .ikayi-startup-content {
+  visibility: hidden;
+}
+
+.ikayi-startup {
+  background: #d75a1b;
+  color: #fff;
+}
+
+body:has(.app-shell),
+body:has(.auth-overlay) {
+  min-height: 100dvh;
+  background: var(--background);
+}
+
+.ikayi-startup-logo {
+  width: 88px;
+  height: 88px;
+  box-shadow: 0 14px 38px rgb(83 34 10 / 24%);
+}
+
+.ikayi-startup[data-animate] .ikayi-startup-logo {
+  animation: ikayi-logo-arrive 1500ms cubic-bezier(.37, .02, .28, 1) both;
+}
+
+.ikayi-startup-title {
+  color: #fff;
+  font-size: clamp(1.85rem, 7vw, 2.5rem);
+}
+
+.ikayi-startup[data-animate] .ikayi-startup-title {
+  animation: ikayi-title-arrive 560ms 1530ms ease-out both;
+}
+
+.ikayi-startup-description {
+  color: #fff;
+  font-size: .95rem;
+}
+
+.ikayi-startup[data-animate] .ikayi-startup-description {
+  animation: ikayi-copy-arrive 430ms 1790ms ease-out both;
+}
+
+@keyframes ikayi-logo-arrive {
+  0% { opacity: 0; transform: translateY(-34dvh) scale(.83); }
+  20% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes ikayi-title-arrive {
+  from { opacity: 0; font-weight: 400; transform: translateY(7px); }
+  to { opacity: 1; font-weight: 800; transform: translateY(0); }
+}
+
+@keyframes ikayi-copy-arrive {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ikayi-tour-scrim {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
   overflow: hidden;
-  background: color-mix(in oklab, var(--primary) 13%, transparent);
 }
-.ikayi-startup-track span {
-  display: block;
-  height: 100%;
-  width: 40%;
-  border-radius: inherit;
-  background: var(--primary);
+
+.ikayi-tour-scrim:not(:has(.ikayi-tour-spotlight)) {
+  background: rgb(31 20 14 / 65%);
 }
-.ikayi-startup-track span.is-loading {
-  animation: ikayi-progress 1.15s linear infinite;
+
+.ikayi-tour-spotlight {
+  position: absolute;
+  border-radius: 999px;
+  border: 2px dashed #ffb47c;
+  box-shadow: 0 0 0 150vmax rgb(31 20 14 / 65%);
 }
-.ikayi-startup-track span.is-ready {
-  width: 100%;
+
+.ikayi-guide-panel {
+  position: fixed;
+  z-index: 46;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 104px);
+  width: min(340px, calc(100% - 32px));
+  transform: translateX(-50%);
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 12px 38px rgb(28 17 11 / 28%);
 }
-.ikayi-startup-status {
-  margin: 8px 0 0;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-@keyframes ikayi-progress {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(280%);
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
-  .ikayi-startup-track span.is-loading {
+  .ikayi-startup[data-animate] .ikayi-startup-logo,
+  .ikayi-startup[data-animate] .ikayi-startup-title,
+  .ikayi-startup[data-animate] .ikayi-startup-description {
     animation: none;
-    transform: translateX(75%);
   }
+
+  .ikayi-startup-title {
+    font-weight: 800;
+  }
+}
+
+.ikayi-startup {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  transition: transform 430ms cubic-bezier(.55, .08, .24, 1);
+}
+
+.ikayi-startup[data-leaving] {
+  transform: translate3d(0, -105%, 0);
+}
+
+.app-shell > div > main {
+  overflow-x: clip;
+}
+
+.ikayi-tab-content[data-slide] {
+  animation: ikayi-tab-arrive 350ms cubic-bezier(.2, .75, .28, 1) both;
+}
+
+.ikayi-tab-content[data-slide="forward"] {
+  --ikayi-tab-start: 100%;
+}
+
+.ikayi-tab-content[data-slide="backward"] {
+  --ikayi-tab-start: -100%;
+}
+
+@keyframes ikayi-tab-arrive {
+  from { transform: translate3d(var(--ikayi-tab-start), 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+.ikayi-tour-spotlight {
+  transition: left 410ms cubic-bezier(.22, 1, .36, 1),
+    top 410ms cubic-bezier(.22, 1, .36, 1),
+    width 410ms cubic-bezier(.22, 1, .36, 1),
+    height 410ms cubic-bezier(.22, 1, .36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ikayi-startup,
+  .ikayi-tour-spotlight { transition: none; }
+  .ikayi-tab-content[data-slide] { animation: none; }
 }

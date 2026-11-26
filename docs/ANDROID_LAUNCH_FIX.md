@@ -22,7 +22,7 @@ CI on `main` must run this **before** `./gradlew assembleDebug`, and also force 
 
 ## After install
 
-Uninstall old APK → install from `android-latest` → cold start.
+Install the matching-signer APK as an in-place update, then cold start. Keep an existing app with local records installed until a backup and restore path has been verified.
 
 ## APK file size
 

@@ -16,6 +16,9 @@ import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/sonner";
 import { maybeSendUsage, trackAppOpen, trackPageView } from "@/lib/usage";
 import { fullSync } from "@/lib/sync";
+import { Shell } from "@/components/ikayi/Shell";
+import { isAppMode } from "@/lib/app-mode";
+import { isRecoveryUrl } from "@/lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -93,7 +96,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", href: "/favicon.png", type: "image/png" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400..800&display=swap",
       },
     ],
   }),
@@ -110,7 +113,7 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
         <style
           dangerouslySetInnerHTML={{
-            __html: `html,body{margin:0;min-height:100%;background:#FAF8F5}`,
+            __html: `html,body{margin:0;min-height:100%;background:${import.meta.env["VITE_NATIVE"] === "1" ? "#D75A1B" : "#FAF8F5"}}`,
           }}
         />
       </head>
@@ -157,7 +160,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <Outlet />
+        {(path === "/" || path === "/i-owe" || path === "/settings") && (isAppMode() || isRecoveryUrl()) ? (
+          <Shell><Outlet /></Shell>
+        ) : <Outlet />}
         <Toaster />
       </I18nProvider>
     </QueryClientProvider>

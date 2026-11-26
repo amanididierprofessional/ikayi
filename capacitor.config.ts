@@ -4,12 +4,12 @@ const config: CapacitorConfig = {
   appId: "com.ikayiyange.app",
   appName: "Ikayi Yange",
   webDir: ".output/public",
-  backgroundColor: "#FAF8F5",
+  backgroundColor: "#D75A1B",
   plugins: {
     SplashScreen: {
       launchShowDuration: 0,
       launchAutoHide: true,
-      backgroundColor: "#FAF8F5",
+      backgroundColor: "#D75A1B",
       showSpinner: false,
       androidSplashResourceName: "splash",
       splashFullScreen: true,
@@ -18,7 +18,7 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false,
-    backgroundColor: "#FAF8F5",
+    backgroundColor: "#D75A1B",
   },
 };
 

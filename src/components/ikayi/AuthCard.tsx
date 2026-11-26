@@ -24,9 +24,10 @@ type Mode = "login" | "signup" | "forgot" | "newpassword";
 
 export function AuthCard({
   onAuthed,
+  guestLimit = false,
 }: {
   onAuthed: (isNewAccount?: boolean) => void;
-  onOffline?: () => void;
+  guestLimit?: boolean;
 }) {
   const { lang, t } = useI18n();
   const rw = lang === "rw";
@@ -61,6 +62,10 @@ export function AuthCard({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (guestLimit && !navigator.onLine) {
+      toast.error("Ukeneye murandasi kugira ngo winjire cyangwa ufungure konti.");
+      return;
+    }
     setBusy(true);
     try {
       // —— Email recovery step 2: password only (code already OK) ——
@@ -323,6 +328,8 @@ export function AuthCard({
                         ? "Ikayi Yange · amadeni yawe"
                         : "Ikayi Yange · your credit book"}
         </p>
+
+        {guestLimit && <p className="mb-4 rounded-xl bg-accent p-3 text-sm text-accent-foreground">Fungura konti cyangwa winjire kugira ngo ukomeze gukoresha Ikayi Yange no kurinda amakuru yawe. Amakuru yawe ari kuri iyi telefone.</p>}
 
         {ask ? (
           <div className="space-y-4">
