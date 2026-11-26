@@ -329,7 +329,7 @@ export function AuthCard({
                         : "Ikayi Yange · your credit book"}
         </p>
 
-        {guestLimit && <p className="mb-4 rounded-xl bg-accent p-3 text-sm text-accent-foreground">Umaze gukora ibikorwa 10. Fungura konti cyangwa winjire kugira ngo ukomeze gukoresha Ikayi Yange no kurinda amakuru yawe. Amakuru yawe ari kuri iyi telefone.</p>}
+        {guestLimit && <p className="mb-4 rounded-xl bg-accent p-3 text-sm text-accent-foreground">Fungura konti cyangwa winjire kugira ngo ukomeze gukoresha Ikayi Yange no kurinda amakuru yawe. Amakuru yawe ari kuri iyi telefone.</p>}
 
         {ask ? (
           <div className="space-y-4">

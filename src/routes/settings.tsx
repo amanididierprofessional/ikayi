@@ -1,13 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
-import { Shell } from "@/components/ikayi/Shell";
 import { SettingsPage } from "@/components/ikayi/SettingsPage";
 import { enterAppMode, isAppMode, isNativePlatform } from "@/lib/app-mode";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
-    meta: [{ title: "Igenamiterere — Ikayi Yange" }, { name: "robots", content: "noindex, nofollow" }],
+    meta: [
+      { title: "Igenamiterere — Ikayi Yange" },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
   }),
   component: SettingsEntry,
 });
@@ -26,9 +28,5 @@ function SettingsEntry() {
   }, [navigate]);
 
   if (!showApp) return null;
-  return (
-    <Shell>
-      <SettingsPage />
-    </Shell>
-  );
+  return <SettingsPage />;
 }

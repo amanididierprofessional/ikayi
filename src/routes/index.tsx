@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
-import { Shell } from "@/components/ikayi/Shell";
 import { CreditBook } from "@/components/ikayi/CreditBook";
 import { enterAppMode, isAppMode, isNativePlatform } from "@/lib/app-mode";
 
@@ -56,9 +55,5 @@ function RootEntry() {
 
   if (!showApp) return null;
 
-  return (
-    <Shell>
-      <CreditBook kind="customer" />
-    </Shell>
-  );
+  return <CreditBook kind="customer" />;
 }

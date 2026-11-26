@@ -16,6 +16,9 @@ import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/sonner";
 import { maybeSendUsage, trackAppOpen, trackPageView } from "@/lib/usage";
 import { fullSync } from "@/lib/sync";
+import { Shell } from "@/components/ikayi/Shell";
+import { isAppMode } from "@/lib/app-mode";
+import { isRecoveryUrl } from "@/lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -157,7 +160,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <Outlet />
+        {(path === "/" || path === "/i-owe" || path === "/settings") && (isAppMode() || isRecoveryUrl()) ? (
+          <Shell><Outlet /></Shell>
+        ) : <Outlet />}
         <Toaster />
       </I18nProvider>
     </QueryClientProvider>

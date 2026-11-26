@@ -1,7 +1,14 @@
 import "fake-indexeddb/auto";
 import { expect, it } from "vitest";
 import { addPerson, db, deletePerson } from "@/lib/credit-db";
-import { GUEST_LIMIT, readGuestActions, saveCreditAction } from "@/lib/guest-ledger";
+import {
+  canRequestCreditChange,
+  guestSignInRequested,
+  GUEST_LIMIT,
+  readGuestActions,
+  saveCreditAction,
+  setGuestSignInRequested,
+} from "@/lib/guest-ledger";
 
 it("counts only saved changes across both books and locks on the tenth change", async () => {
   const add = (name: string, kind: "customer" | "supplier") =>
@@ -22,6 +29,14 @@ it("counts only saved changes across both books and locks on the tenth change", 
   db.close();
   await db.open();
   expect(await readGuestActions()).toBe(GUEST_LIMIT);
+  expect(guestSignInRequested()).toBe(false);
+  expect(canRequestCreditChange(false, 9)).toBe(true);
+  expect(canRequestCreditChange(false, 10)).toBe(false);
+  setGuestSignInRequested(true);
+  expect(guestSignInRequested()).toBe(true);
+  setGuestSignInRequested(false);
+  expect(guestSignInRequested()).toBe(false);
+  expect(canRequestCreditChange(true, 10)).toBe(true);
   expect(await db.parties.count()).toBe(7);
   await saveCreditAction(true, () => addPerson("Signed in", "", "customer", 0, ""));
   expect(await db.parties.count()).toBe(8);

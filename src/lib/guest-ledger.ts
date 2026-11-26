@@ -3,7 +3,25 @@ import { db } from "@/lib/credit-db";
 
 export const GUEST_LIMIT = 10;
 const ACTIONS_KEY = "guest-credit-actions";
-export const LedgerSession = createContext(false);
+const PROMPT_KEY = "ikayi-guest-signin-requested";
+export class GuestLimitError extends Error {}
+export const LedgerSession = createContext({
+  authenticated: false,
+  requestChange: (_force?: boolean) => true,
+});
+
+export function guestSignInRequested() {
+  return localStorage.getItem(PROMPT_KEY) === "1";
+}
+
+export function setGuestSignInRequested(value: boolean) {
+  if (value) localStorage.setItem(PROMPT_KEY, "1");
+  else localStorage.removeItem(PROMPT_KEY);
+}
+
+export function canRequestCreditChange(authenticated: boolean, completed: number) {
+  return authenticated || completed < GUEST_LIMIT;
+}
 export const useLedgerSession = () => useContext(LedgerSession);
 
 export async function readGuestActions() {
@@ -16,7 +34,7 @@ export async function saveCreditAction(authenticated: boolean, change: () => Pro
   return db.transaction("rw", db.settings, db.parties, db.debts, db.payments, async () => {
     const completed = await readGuestActions();
     if (completed >= GUEST_LIMIT) {
-      throw new Error("Fungura konti cyangwa winjire kugira ngo ukomeze.");
+      throw new GuestLimitError("Fungura konti cyangwa winjire kugira ngo ukomeze.");
     }
     await change();
     await db.settings.put({ key: ACTIONS_KEY, value: String(completed + 1) });
