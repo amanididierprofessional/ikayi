@@ -33,12 +33,14 @@ import {
 } from "@/lib/credit-db";
 import { useI18n, reminderText } from "@/lib/i18n";
 import { DeadlinePicker, isoToDueDays } from "@/components/ikayi/DeadlinePicker";
+import { saveCreditAction, useLedgerSession } from "@/lib/guest-ledger";
 import { pushCredit } from "@/lib/sync";
 import { maybeSendUsage, trackAction } from "@/lib/usage";
 
 type FormKind = "person" | "debt" | "payment" | "edit";
 
 export function CreditBook({ kind }: { kind: PartyKind }) {
+  const authenticated = useLedgerSession();
   const { t, lang } = useI18n();
   const rw = lang === "rw";
   const [query, setQuery] = useState("");
@@ -109,7 +111,7 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
           </p>
           <p className="mt-1 text-2xl font-bold tabular-nums">{fmt(total)}</p>
         </div>
-        <Button className="h-10 shrink-0 rounded-full px-3 text-xs" onClick={() => setForm({ type: "person" })}>
+        <Button data-guide-target="add-person" className="h-10 shrink-0 rounded-full px-3 text-xs" onClick={() => setForm({ type: "person" })}>
           <Plus className="size-4" />
           {t("addParty")}
         </Button>
@@ -143,12 +145,9 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
             ].sort((a, b) => a.at - b.at);
             const shown = history && openId === r.p.id ? txs : txs.slice(-4);
             return (
-              <li key={r.p.id} className="rounded-2xl bg-card p-3 shadow-card">
-                <div className="flex items-center gap-3">
-                  <Button variant="ghost" className="size-11 shrink-0 rounded-full bg-accent p-0 text-base font-bold text-accent-foreground" aria-label={`${t("edit")} ${r.p.name}`} onClick={() => setForm({ type: "edit", party: r.p })}>
-                    {r.p.name[0]?.toUpperCase()}
-                  </Button>
-                  <Button variant="ghost" className="h-auto min-w-0 flex-1 justify-start p-0 text-left hover:bg-transparent" aria-label={r.p.name} aria-expanded={open} onClick={() => { setOpenId(open ? null : r.p.id); setHistory(false); }}>
+              <li key={r.p.id} className="rounded-2xl bg-card shadow-card">
+                <button type="button" className="flex w-full items-center gap-3 rounded-2xl p-3 text-left" aria-expanded={open} onClick={() => { setOpenId(open ? null : r.p.id); setHistory(false); }}>
+                  <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-base font-bold text-accent-foreground" aria-hidden="true">{r.p.name[0]?.toUpperCase()}</span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold">{r.p.name}</span>
                       <span className="block whitespace-normal text-[11px] font-normal text-muted-foreground">
@@ -156,12 +155,11 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
                         {r.overdue && <span className="ml-1 text-destructive"> · {t("overdue")}</span>}
                       </span>
                     </span>
-                  </Button>
-                  <span className="shrink-0 text-sm font-bold tabular-nums text-primary">{fmt(r.balance)}</span>
+                  <span className="ml-auto shrink-0 text-sm font-bold tabular-nums text-primary">{fmt(r.balance)}</span>
                   <ChevronDown className={`size-4 shrink-0 text-muted-foreground ${open ? "rotate-180" : ""}`} />
-                </div>
+                </button>
                 {open && (
-                  <div className="mt-3 space-y-3 border-t pt-3">
+                  <div className="mx-3 space-y-3 border-t py-3">
                     <ul className="space-y-2">
                       {shown.map((tx) => (
                         <li key={tx.key} className="flex justify-between gap-3 text-sm">
@@ -187,6 +185,7 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
                         {history ? (rw ? "Hisha amateka" : "Hide history") : (rw ? "Reba amateka yose" : "Show full history")}
                       </Button>
                     )}
+                    <Button type="button" variant="ghost" className="h-9" onClick={() => setForm({ type: "edit", party: r.p })}>{t("edit")}</Button>
                     <div className="flex gap-2">
                       <Button className="h-11 min-w-0 flex-1 rounded-full px-2 text-xs" onClick={() => setForm({ type: "payment", party: r.p, balance: r.balance })}>{t("recordPayment")}</Button>
                       <Button variant="outline" className="h-11 min-w-0 flex-1 rounded-full px-2 text-xs" onClick={() => setForm({ type: "debt", party: r.p })}>{t("addDebtLbl")}</Button>
@@ -208,7 +207,7 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
 
       <Drawer open={!!form} onOpenChange={(o) => !o && setForm(null)}>
         <DrawerContent className="max-h-[92dvh]">
-          {form && <CreditForm type={form.type} party={form.party} balance={form.balance ?? 0} kind={kind} onDone={() => setForm(null)} />}
+          {form && <CreditForm type={form.type} {...(form.party ? { party: form.party } : {})} balance={form.balance ?? 0} kind={kind} onDone={() => setForm(null)} />}
         </DrawerContent>
       </Drawer>
 
@@ -224,7 +223,10 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
               if (!removing) return;
               setBusy(true);
               try {
-                await deletePerson(removing.id);
+                await saveCreditAction(authenticated, async () => {
+                  if (!await db.parties.get(removing.id)) throw new Error("Uyu muntu ntakiri mu ikayi.");
+                  await deletePerson(removing.id);
+                });
                 try { await trackAction("person_deleted"); await maybeSendUsage(); } catch { /* */ }
                 toast.success(rw ? "Byasibwe" : "Deleted"); setRemoving(null);
               }
@@ -238,6 +240,7 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
 }
 
 function CreditForm({ type, party, balance, kind, onDone }: { type: FormKind; party?: Party; balance: number; kind: PartyKind; onDone: () => void }) {
+  const authenticated = useLedgerSession();
   const { t, lang } = useI18n();
   const rw = lang === "rw";
   const [name, setName] = useState(party?.name ?? "");
@@ -256,21 +259,24 @@ function CreditForm({ type, party, balance, kind, onDone }: { type: FormKind; pa
     try {
       const n = Number(amount);
       const days = isoToDueDays(deadline || undefined);
-      if (type === "person") await addPerson(name, phone, kind, n || 0, desc, days);
-      else if (party) {
-        if (type === "edit") {
-          if (!name.trim()) throw new Error(t("name"));
-          await db.parties.update(party.id, { name: name.trim(), phone: phone.trim() });
-        } else if (type === "debt") await addDebt(party.id, n, desc, days);
-        else await pay(party.id, n, date);
-      }
+      await saveCreditAction(authenticated, async () => {
+        if (type === "person") await addPerson(name, phone, kind, n || 0, desc, days);
+        else {
+          if (!party || !await db.parties.get(party.id)) throw new Error("Uyu muntu ntakiri mu ikayi.");
+          if (type === "edit") {
+            if (!name.trim()) throw new Error(t("name"));
+            await db.parties.update(party.id, { name: name.trim(), phone: phone.trim() });
+          } else if (type === "debt") await addDebt(party.id, n, desc, days);
+          else await pay(party.id, n, date);
+        }
+      });
       const analyticsAction = type === "person"
         ? (kind === "customer" ? "customer_added" : "supplier_added")
         : type === "debt" ? "debt_added" : type === "payment" ? "payment_recorded" : null;
       if (analyticsAction) {
         try { await trackAction(analyticsAction); await maybeSendUsage(); } catch { /* */ }
       }
-      if (localStorage.getItem("ikayi-sync-mode") === "auto" && navigator.onLine) {
+      if (authenticated && localStorage.getItem("ikayi-sync-mode") === "auto" && navigator.onLine) {
         const syncResult = await pushCredit();
         if (!syncResult.ok) toast.message(`Saved locally; cloud sync pending: ${syncResult.reason}`);
       }

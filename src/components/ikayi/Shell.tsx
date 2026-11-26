@@ -1,17 +1,30 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { BookUser, Cloud, HandCoins, Settings2, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { toast } from "sonner";
 import { fullSync } from "@/lib/sync";
 import { useI18n } from "@/lib/i18n";
-import { isLoggedIn } from "@/lib/auth";
+import { getAccount, isRecoveryUrl } from "@/lib/auth";
+import { ensureSupabase } from "@/lib/supabase";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/credit-db";
+import { GUEST_LIMIT, LedgerSession, readGuestActions } from "@/lib/guest-ledger";
+import { tour } from "@/lib/first-run";
 import { enterAppMode, isAppMode } from "@/lib/app-mode";
 import { AuthCard } from "./AuthCard";
 import { useConnectivity } from "@/hooks/use-connectivity";
 import logo from "@/assets/ikayi-logo.png";
 
+let introComplete = false;
+const GUIDE_DONE = "ikayi-guide-seen";
+const GUIDE_STEP = "ikayi-guide-step";
+async function hasAccountSession() {
+  const client = await ensureSupabase();
+  const result = await client?.auth.getSession().catch(() => null);
+  return Boolean(result?.data.session?.user);
+}
 const AUTO_SYNC_KEY = "ikayi-sync-mode";
 
 /**
@@ -22,6 +35,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const { lang, setLang, t } = useI18n();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const online = useConnectivity();
+  const navigate = useNavigate();
+  const count = useLiveQuery(readGuestActions, []);
+  const [intro, setIntro] = useState(!introComplete);
+  const [step, setStep] = useState<number | null>(null);
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
   const [syncSetupOpen, setSyncSetupOpen] = useState(false);
@@ -36,29 +53,52 @@ export function Shell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!intro) return;
+    const timer = window.setTimeout(() => {
+      introComplete = true;
+      setIntro(false);
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1250);
+    return () => window.clearTimeout(timer);
+  }, [intro]);
+
+  useEffect(() => {
     let cancelled = false;
-    void isLoggedIn()
-      .then((ok) => {
-        if (!cancelled) {
-          setAuthed(ok || sessionStorage.getItem("ikayi-device-mode") === "1");
-          setChecking(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAuthed(sessionStorage.getItem("ikayi-device-mode") === "1");
-          setChecking(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    void (async () => {
+      const [signedIn, records] = await Promise.all([hasAccountSession(), db.parties.count()]);
+      if (cancelled) return;
+      setAuthed(signedIn && !isRecoveryUrl());
+      if (!signedIn && !isRecoveryUrl() && !localStorage.getItem(GUIDE_DONE)) {
+        const savedStep = sessionStorage.getItem(GUIDE_STEP);
+        if (savedStep !== null || (!records && !getAccount())) setStep(Number(savedStep ?? 0));
+        else localStorage.setItem(GUIDE_DONE, "1");
+      }
+    })().catch(() => {}).finally(() => { if (!cancelled) setChecking(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  const onAuthed = useCallback((isNewAccount = false) => {
+  const onAuthed = useCallback(async (isNewAccount = false) => {
+    if (!await hasAccountSession()) {
+      toast.error("Huza telefone na murandasi maze wongere winjire cyangwa ufungure konti.");
+      return;
+    }
     setAuthed(true);
     if (isNewAccount) setSyncSetupOpen(true);
   }, []);
+
+  function finishGuide() {
+    localStorage.setItem(GUIDE_DONE, "1");
+    sessionStorage.removeItem(GUIDE_STEP);
+    setStep(null);
+  }
+
+  function advanceGuide() {
+    if (step === null) return;
+    const next = tour[step + 1];
+    if (!next) return finishGuide();
+    sessionStorage.setItem(GUIDE_STEP, String(step + 1));
+    setStep(step + 1);
+    if (path !== next.target) void navigate({ to: next.target });
+  }
   const finishSyncSetup = useCallback((enabled: boolean) => {
     let saved = false;
     try {
@@ -73,11 +113,6 @@ export function Shell({ children }: { children: ReactNode }) {
       toast.success(lang === "rw" ? "Guhuza amakuru byikora byemejwe" : "Automatic sync enabled");
     }
   }, [lang]);
-  const onOffline = useCallback(() => {
-    sessionStorage.setItem("ikayi-device-mode", "1");
-    setAuthed(true);
-  }, []);
-
   const tabs = [
     { to: "/" as const, label: t("owesMe"), icon: BookUser },
     { to: "/i-owe" as const, label: t("iOwe"), icon: HandCoins },
@@ -88,25 +123,25 @@ export function Shell({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  if (checking) {
+  if (checking || intro || count === undefined) {
     return (
       <div className="ikayi-startup">
         <div className="ikayi-startup-content">
           <img src={logo} alt="" className="ikayi-startup-logo" />
           <h1 className="ikayi-startup-title">Ikayi Yange</h1>
-          <p className="ikayi-startup-description">
-            {lang === "rw" ? "Tegereza gato…" : "Getting things ready…"}
-          </p>
-          <div className="ikayi-startup-track" role="progressbar" aria-label={lang === "rw" ? "Gutegura porogaramu" : "Loading Ikayi"}>
-            <span className="is-loading" />
-          </div>
+          <p className="ikayi-startup-description">Bika amadeni n’inguzanyo bitakugoye</p>
         </div>
       </div>
     );
   }
 
+  if (!authed && (count >= GUEST_LIMIT || isRecoveryUrl())) {
+    return <AuthCard onAuthed={onAuthed} guestLimit={count >= GUEST_LIMIT} />;
+  }
+
+  const activeGuide = step === null ? undefined : tour[step];
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-guide-add={step === 3 || undefined}>
       <header className="app-header">
         <div className="flex min-w-0 items-center gap-3">
           <img src={logo} alt="" className="size-11 shrink-0 rounded-xl" />
@@ -154,7 +189,10 @@ export function Shell({ children }: { children: ReactNode }) {
         </Button>
       </header>
 
-      <main className="px-4 pb-32 pt-3">{authed ? children : null}</main>
+      <main className="px-4 pb-32 pt-3">
+        {!authed && <p className="mb-2 text-right text-xs text-muted-foreground" aria-live="polite">Ibikorwa {count}/{GUEST_LIMIT}</p>}
+        <LedgerSession.Provider value={authed}>{children}</LedgerSession.Provider>
+      </main>
 
       <nav className="bottom-nav" aria-label={lang === "rw" ? "Paji" : "Main navigation"}>
         {tabs.map(({ to, label, icon: Icon }) => {
@@ -170,7 +208,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   : "flex-1 text-ink-foreground/70 hover:bg-ink hover:text-ink-foreground"
               }`}
             >
-              <Link to={to} aria-label={label} aria-current={active ? "page" : undefined}>
+              <Link to={to} className={step !== 3 && activeGuide?.target === to ? "ikayi-guide-target" : undefined} aria-label={label} aria-current={active ? "page" : undefined}>
                 <Icon className="size-5 shrink-0" />
                 {active && <span className="truncate text-sm font-semibold">{label}</span>}
               </Link>
@@ -179,7 +217,16 @@ export function Shell({ children }: { children: ReactNode }) {
         })}
       </nav>
 
-      {!authed && <AuthCard onAuthed={onAuthed} onOffline={onOffline} />}
+      {activeGuide && (
+        <aside className="ikayi-guide-panel" aria-label="Uko ukoresha Ikayi" aria-live="polite">
+          <h2 className="font-semibold">{activeGuide.title}</h2>
+          <p className="mt-1 text-sm">{activeGuide.text}</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={finishGuide}>Simbuka</Button>
+            <Button type="button" onClick={advanceGuide}>{step === 3 ? "Tangira" : "Komeza"}</Button>
+          </div>
+        </aside>
+      )}
 
       <Drawer
         open={syncSetupOpen}
