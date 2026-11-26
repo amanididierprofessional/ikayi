@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import Dexie from "dexie";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db, deletePerson } from "@/lib/credit-db";
-import { fullSync } from "@/lib/sync";
+import { deleteCreditPerson, fullSync } from "@/lib/sync";
 
 type Row = { local_id: number; user_id: string; [key: string]: unknown };
 const cloud = vi.hoisted(() => {
@@ -62,6 +62,8 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
+  localStorage.removeItem("ikayi-account");
   cloud.rows.clear();
   cloud.uploads.length = 0;
   cloud.afterPaymentRead = undefined;
@@ -98,9 +100,19 @@ describe("credit deletion sync", () => {
     expect(await db.payments.count()).toBe(0);
   });
 
-  it("uploads known-owner deletions before records and never restores stale history or drops new local rows", async () => {
+  it("keeps an offline deletion through restart and repeated syncs", async () => {
     await db.open();
-    await deletePerson(1, "owner");
+    vi.stubGlobal("navigator", { onLine: false });
+    localStorage.setItem("ikayi-account", JSON.stringify({ supabaseUserId: "owner" }));
+    await db.parties.add(party);
+    await db.debts.add(debt);
+    await db.payments.add(payment);
+    await deleteCreditPerson(party.id);
+    expect(await db.parties.get(party.id)).toBeUndefined();
+    db.close();
+    await db.open();
+    expect(await db.deletedParties.get(party.id)).toEqual({ id: party.id, owner: "owner" });
+    vi.stubGlobal("navigator", { onLine: true });
     await deletePerson(4, "other-owner");
     await deletePerson(5);
     await db.parties.add({ ...party, id: 7 });
@@ -120,6 +132,8 @@ describe("credit deletion sync", () => {
     expect(await fullSync()).toEqual({ ok: true });
     expect(cloud.uploads.slice(0, 2)).toEqual(["credit_party_deletions", "parties"]);
     expect(cloud.rows.get("credit_party_deletions")).toEqual([{ user_id, local_id: 1 }]);
+    expect(await fullSync()).toEqual({ ok: true });
+    expect(cloud.uploads.filter((table) => table === "credit_party_deletions")).toHaveLength(1);
     expect(await db.parties.toCollection().primaryKeys()).toEqual([7, 8]);
     expect(await db.debts.count()).toBe(0);
     expect(await db.payments.count()).toBe(0);

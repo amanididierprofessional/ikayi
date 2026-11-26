@@ -215,7 +215,12 @@ export function CreditBook({ kind }: { kind: PartyKind }) {
         <DrawerContent>
           <DrawerHeader>
             <DrawerTitle>{rw ? "Siba umuntu?" : "Delete person?"}</DrawerTitle>
-            <DrawerDescription>{removing?.name} — {rw ? "Amateka yose azasibwa" : "All history will be removed"}</DrawerDescription>
+            <DrawerDescription>
+              {removing?.name} —{" "}
+              {rw
+                ? "Amateka yose azasibwa. Niba yarabitswe kuri murandasi, azasibwa na ho igihe uzahuza amakuru."
+                : "All history will be deleted. If there’s an online copy, it will be deleted when you sync."}
+            </DrawerDescription>
           </DrawerHeader>
           <div className="flex gap-2 px-4 pb-8">
             <Button variant="outline" className="h-12 flex-1 rounded-full" onClick={() => setRemoving(null)}>{t("cancel")}</Button>
