@@ -89,7 +89,7 @@ export function Shell({ children }: { children: ReactNode }) {
       () => {
         setIntroLeaving(true);
       },
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1900,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 2440,
     );
     return () => window.clearTimeout(timer);
   }, [intro]);
