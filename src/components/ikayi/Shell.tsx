@@ -89,7 +89,7 @@ export function Shell({ children }: { children: ReactNode }) {
       () => {
         setIntroLeaving(true);
       },
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 2440,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1600,
     );
     return () => window.clearTimeout(timer);
   }, [intro]);
@@ -97,7 +97,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const ready = !checking && count !== undefined;
   useEffect(() => {
     if (!intro || !introLeaving || !ready) return;
-    const duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 430;
+    const duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 300;
     const timer = window.setTimeout(() => {
       introComplete = true;
       setIntro(false);
@@ -128,33 +128,47 @@ export function Shell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (intro || !ready || signinRequested || !activeGuide || path !== activeGuide.target) return;
+    if (intro || !ready || signinRequested || !activeGuide || isLanding) return;
+    if (path !== activeGuide.target) {
+      void navigate({ to: activeGuide.target });
+      return;
+    }
+
     const selector = step === 3 ? '[data-guide-target="add-person"]' : ".ikayi-guide-target";
-    const target = document.querySelector(selector);
-    if (!target) return;
-    const panel = target.closest(".ikayi-tab-content");
+    let frame = 0;
+    let observedTarget: Element | null = null;
     const measure = () => {
-      if (panel?.getAnimations().some((animation) => animation.playState === "running")) return;
+      const target = document.querySelector(selector);
+      if (!target || target.closest(".ikayi-tab-content")?.getAnimations?.().some(
+        (animation) => animation.pending || animation.playState === "running",
+      )) {
+        frame = window.requestAnimationFrame(measure);
+        return;
+      }
       const { left, top, width, height } = target.getBoundingClientRect();
       setSpotlight({ left: left - 4, top: top - 4, width: width + 8, height: height + 8 });
+      if (observedTarget !== target) {
+        observer.disconnect();
+        observer.observe(target);
+        observedTarget = target;
+      }
     };
-    const motion = panel?.getAnimations() ?? [];
-    if (motion.length)
-      void Promise.allSettled(motion.map((animation) => animation.finished)).then(() => {
-        if (target.isConnected) measure();
-      });
-    else measure();
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    const observer = new ResizeObserver(scheduleMeasure);
+    scheduleMeasure();
     guidePanel.current?.focus({ preventScroll: true });
-    const observer = new ResizeObserver(measure);
-    observer.observe(target);
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", scheduleMeasure);
+    window.addEventListener("scroll", scheduleMeasure, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("scroll", scheduleMeasure, true);
     };
-  }, [activeGuide, intro, path, ready, signinRequested, step]);
+  }, [activeGuide, intro, isLanding, navigate, path, ready, signinRequested, step]);
 
   const onAuthed = useCallback(async (isNewAccount = false) => {
     if (!(await hasAccountSession())) {
@@ -187,7 +201,6 @@ export function Shell({ children }: { children: ReactNode }) {
     if (!next) return finishGuide();
     sessionStorage.setItem(GUIDE_STEP, String(step + 1));
     setStep(step + 1);
-    if (path !== next.target) void navigate({ to: next.target });
   }
   const finishSyncSetup = useCallback(
     (enabled: boolean) => {

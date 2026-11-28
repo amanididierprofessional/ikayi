@@ -256,7 +256,7 @@ body:has(.auth-overlay) {
 }
 
 .ikayi-startup[data-animate] .ikayi-startup-logo {
-  animation: ikayi-logo-arrive 1500ms cubic-bezier(.37, .02, .28, 1) both;
+  animation: ikayi-logo-arrive 1150ms cubic-bezier(.37, .02, .28, 1) both;
 }
 
 .ikayi-startup-title {
@@ -265,7 +265,7 @@ body:has(.auth-overlay) {
 }
 
 .ikayi-startup[data-animate] .ikayi-startup-title {
-  animation: ikayi-title-arrive 560ms 1530ms ease-out both;
+  animation: ikayi-title-arrive 460ms 960ms ease-out both;
 }
 
 .ikayi-startup-description {
@@ -274,7 +274,7 @@ body:has(.auth-overlay) {
 }
 
 .ikayi-startup[data-animate] .ikayi-startup-description {
-  animation: ikayi-copy-arrive 430ms 1790ms ease-out both;
+  animation: ikayi-copy-arrive 330ms 1200ms ease-out both;
 }
 
 @keyframes ikayi-logo-arrive {
@@ -341,7 +341,7 @@ body:has(.auth-overlay) {
   position: fixed;
   inset: 0;
   z-index: 100;
-  transition: transform 430ms cubic-bezier(.55, .08, .24, 1);
+  transition: transform 300ms cubic-bezier(.55, .08, .24, 1);
 }
 
 .ikayi-startup[data-leaving] {
